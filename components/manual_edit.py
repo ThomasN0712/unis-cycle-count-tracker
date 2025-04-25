@@ -215,7 +215,7 @@ def render_manual_edit():
                                     updated = db_client.update_cycle_count(record_id, updated_record)
                                     if updated:
                                         st.success("Record updated successfully!")
-                                        st.experimental_rerun()
+                                        st.rerun()
                                     else:
                                         st.error("Failed to update record.")
                                 except Exception as e:
@@ -313,35 +313,71 @@ def render_manual_edit():
                             axis=1
                         )
                         
+                        # Add better file preview to help diagnose issues
+                        st.write("### File Overview")
+                        st.write(f"Total rows: {len(import_df)}")
+                        st.write(f"Columns found: {', '.join(import_df.columns.tolist())}")
+
+                        # Check for completely empty columns that might cause issues
+                        empty_cols = [col for col in import_df.columns if import_df[col].isna().all()]
+
+                        # Show more rows in preview to help diagnose issues
+                        with st.expander("Expanded data preview (10 rows)"):
+                            st.dataframe(import_df.head(10))
+                        
                         # Import button
                         if st.button("Import Data"):
-                            with st.spinner("Importing records..."):
+                            with st.spinner("Preparing to import..."):
                                 records = import_df.to_dict('records')
-                                success_count = 0
-                                error_count = 0
+                                total_records = len(records)
                                 
-                                for record in records:
-                                    try:
-                                        # Add required fields
-                                        record["id"] = str(uuid.uuid4())
-                                        record["uploaded_by"] = st.session_state.get("username", "import")
-                                        record["uploaded_at"] = datetime.now().isoformat()
-                                        
-                                        # Ensure numeric types are float
-                                        for field in ["system_count", "actual_count", "variance", "percent_diff"]:
-                                            if field in record:
-                                                record[field] = float(record[field])
-                                        
-                                        # Insert into database
-                                        db_client.insert_cycle_count(record)
-                                        success_count += 1
-                                    except Exception as e:
-                                        error_count += 1
-                                        st.error(f"Error importing record: {str(e)}")
-                                
-                                st.success(f"Import complete. {success_count} records imported successfully, {error_count} errors.")
-                                if success_count > 0:
-                                    st.experimental_rerun()
+                                if total_records == 0:
+                                    st.warning("No records found to import. Please check your file.")
+                                else:
+                                    # Create a progress bar
+                                    progress_bar = st.progress(0)
+                                    status_text = st.empty()
+                                    
+                                    success_count = 0
+                                    error_count = 0
+                                    
+                                    # Process records with progress updates
+                                    for i, record in enumerate(records):
+                                        try:
+                                            # Update progress
+                                            progress = int((i / total_records) * 100)
+                                            progress_bar.progress(progress)
+                                            status_text.text(f"Processing: {i+1}/{total_records} records ({progress}%)")
+                                            
+                                            # Add required fields
+                                            record["id"] = str(uuid.uuid4())
+                                            record["uploaded_by"] = st.session_state.get("name", "import")
+                                            record["uploaded_at"] = datetime.now().isoformat()
+                                            
+                                            # Handle column name mismatch - use "Expiration Date" instead of "expiration_date"
+                                            if "expiration_date" in record:
+                                                exp_value = record.pop("expiration_date")
+                                                record["Expiration Date"] = exp_value
+                                            
+                                            # Ensure numeric types are float
+                                            for field in ["system_count", "actual_count", "variance", "percent_diff"]:
+                                                if field in record:
+                                                    record[field] = float(record[field])
+                                            
+                                            # Insert into database
+                                            db_client.insert_cycle_count(record)
+                                            success_count += 1
+                                        except Exception as e:
+                                            error_count += 1
+                                            st.error(f"Error importing record {i+1}: {str(e)}")
+                                    
+                                    # Complete the progress bar
+                                    progress_bar.progress(100)
+                                    status_text.text(f"Import complete: {success_count}/{total_records} records processed successfully")
+                                    
+                                    st.success(f"Import complete. {success_count} records imported successfully, {error_count} errors.")
+                                    if success_count > 0:
+                                        st.rerun()
                 except Exception as e:
                     st.error(f"Error processing file: {str(e)}")
 
@@ -406,7 +442,7 @@ def render_manual_edit():
                                 deleted = db_client.delete_cycle_count(record_id)
                                 if deleted:
                                     st.success("Record deleted successfully!")
-                                    st.experimental_rerun()
+                                    st.rerun()
                                 else:
                                     st.error("Failed to delete record.")
                             except Exception as e:
