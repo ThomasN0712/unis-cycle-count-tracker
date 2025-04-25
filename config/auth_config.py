@@ -16,13 +16,13 @@ credentials = {
             "role": "admin"
         },
         "manager": {
-            "name": "Warehouse Manager",
+            "name": "Edward Lampley",
             "password": "hashed_password_placeholder",  # Will be hashed
             "email": "manager@example.com",
             "role": "manager"
         },
         "manager2": {
-            "name": "Warehouse Manager 2",
+            "name": "Marcelino Vazquez",
             "password": "hashed_password_placeholder",  # Will be hashed
             "email": "manager2@example.com",
             "role": "manager"
@@ -39,7 +39,7 @@ passwords = {
 
 # Hash passwords and update credentials
 for username, password in passwords.items():
-    credentials["usernames"][username]["password"] = stauth.Hasher([password]).generate()[0]
+    credentials["usernames"][username]["password"] = stauth.Hasher().hash(password)
 
 # Configuration for stauth
 config = {
