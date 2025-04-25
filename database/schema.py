@@ -1,4 +1,3 @@
-
 # Table name
 CYCLE_COUNTS_TABLE = "cycle_counts"
 
@@ -8,6 +7,12 @@ CREATE TABLE IF NOT EXISTS cycle_counts (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     item_id TEXT NOT NULL,
     description TEXT NOT NULL,
+    lot_number TEXT,
+    expiration_date DATE,
+    unit TEXT,
+    status TEXT,
+    lp TEXT,
+    location TEXT,
     system_count NUMERIC NOT NULL,
     actual_count NUMERIC NOT NULL,
     variance NUMERIC NOT NULL,
@@ -25,6 +30,12 @@ COLUMNS = {
     "id": "id",
     "item_id": "item_id",
     "description": "description",
+    "lot_number": "lot_number",
+    "expiration_date": "expiration_date",
+    "unit": "unit",
+    "status": "status",
+    "lp": "lp",
+    "location": "location",
     "system_count": "system_count",
     "actual_count": "actual_count",
     "variance": "variance",
