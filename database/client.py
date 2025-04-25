@@ -14,7 +14,6 @@ class SupabaseClient:
                 supabase_url = st.secrets["supabase"]["url"]
                 supabase_key = st.secrets["supabase"]["key"]
                 cls._instance.supabase = create_client(supabase_url, supabase_key)
-                st.write("Supabase client initialized successfully")
             except Exception as e:
                 st.error(f"Error initializing Supabase client: {str(e)}")
                 # Initialize with None to prevent further errors
