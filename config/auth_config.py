@@ -9,19 +9,25 @@ import hashlib
 # Define hardcoded user credentials
 credentials = {
     "usernames": {
-        "admin": {
-            "name": "Admin User",
+        "thomas": {
+            "name": "Thomas Nguyen",
             "password": "hashed_password_placeholder",  # Will be hashed
             "email": "admin@example.com",
             "role": "admin"
         },
-        "manager": {
+        "brayan": {
+            "name": "Brayan Escobar",
+            "password": "hashed_password_placeholder",  # Will be hashed
+            "email": "admin2@example.com",
+            "role": "admin"
+        },
+        "edward": {
             "name": "Edward Lampley",
             "password": "hashed_password_placeholder",  # Will be hashed
             "email": "manager@example.com",
             "role": "manager"
         },
-        "manager2": {
+        "marcelino": {
             "name": "Marcelino Vazquez",
             "password": "hashed_password_placeholder",  # Will be hashed
             "email": "manager2@example.com",
@@ -32,9 +38,10 @@ credentials = {
 
 # Placeholder passwords to be hashed (in production, use more secure passwords)
 passwords = {
-    "admin": "admin123",
-    "manager": "123",
-    "manager2": "manager2pass"
+    "thomas": "123",
+    "brayan": "123",
+    "edward": "123",
+    "marcelino": "123"
 }
 
 # Hash passwords and update credentials
