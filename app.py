@@ -1,7 +1,16 @@
 import streamlit as st
 import os
+import pandas as pd
 from components.authentication import authenticate, show_authentication_status, logout, check_admin_access
 from components.upload import render_upload_form
+from components.charts import (
+    render_submission_chart, 
+    render_customer_pie_chart,
+    render_variance_histogram,
+    render_top_variance_items,
+    render_user_submission_chart,
+    render_dashboard_summary
+)
 from database.client import SupabaseClient
 
 # Set page configuration
@@ -9,18 +18,7 @@ st.set_page_config(
     page_title="Cycle Count Tracker",
     page_icon="📊",
     layout="wide",
-    initial_sidebar_state="expanded"
 )
-
-# Add custom CSS to hide sidebar when not authenticated
-if "authentication_status" not in st.session_state or not st.session_state["authentication_status"]:
-    st.markdown("""
-    <style>
-        [data-testid="stSidebar"] {
-            display: none;
-        }
-    </style>
-    """, unsafe_allow_html=True)
 
 # Add custom styles
 st.markdown("""
@@ -35,9 +33,6 @@ st.markdown("""
     }
     h1, h2, h3 {
         color: #2c3e50;
-    }
-    .stSidebar .sidebar-content {
-        background-color: #f8f9fa;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -60,37 +55,203 @@ if "name" not in st.session_state:
 if "username" not in st.session_state:
     st.session_state["username"] = None
 
+# Modified logout function to place at top of page
+def logout_top():
+    if "authenticator" in st.session_state:
+        authenticator = st.session_state["authenticator"]
+        authenticator.logout("Logout", "main")
+    else:
+        # Re-initialize authenticator if needed
+        from config.auth_config import get_authenticator
+        authenticator = get_authenticator()
+        authenticator.logout("Logout", "main")
+        
+    # Make sure session state is cleared properly on logout
+    if st.session_state.get("authentication_status") == False:
+        st.session_state["authentication_status"] = None
+
+# Modified authentication status display
+def show_user_welcome():
+    if st.session_state.get("authentication_status"):
+        st.write(f'Welcome *{st.session_state["name"]}*')
+        return True
+    return False
+
+# Dashboard function - moved from Dashboard.py
+def render_dashboard():
+    try:
+        # Get data from database
+        db_client = SupabaseClient()
+        data = db_client.get_all_cycle_counts()
+        
+        if not data:
+            st.info("No data available in the database")
+            return
+        
+        # Convert to DataFrame
+        df = pd.DataFrame(data)
+        
+        # Apply role-based filtering
+        is_admin = check_admin_access()
+        if not is_admin:
+            # For managers, only show their own uploads
+            username = st.session_state.get("name")  # Use name instead of username
+            df = df[df["uploaded_by"] == username]
+            st.info(f"Showing cycle counts uploaded by {username}")
+        else:
+            st.success("Admin view: Showing all cycle counts")
+            
+        # Continue with dashboard display as before
+        if df.empty:
+            st.warning("No data to display with current filters")
+            return
+            
+        # Convert cycle_date from string to datetime
+        df["cycle_date"] = pd.to_datetime(df["cycle_date"]).dt.date
+        
+        # Display summary metrics
+        render_dashboard_summary(data)
+        
+        st.subheader("Filters")
+        
+        # Create columns for filters
+        col1, col2, col3 = st.columns(3)
+        
+        # Get unique values for filters
+        customers = ["All"] + sorted(df["customer"].unique().tolist())
+        if is_admin:
+            users = ["All"] + sorted(df["uploaded_by"].unique().tolist())
+        
+        # Add filter widgets
+        with col1:
+            selected_customer = st.selectbox("Customer", customers)
+        
+        with col2:
+            if is_admin:
+                selected_user = st.selectbox("Uploaded By", users)
+        
+        with col3:
+            date_range = st.date_input(
+                "Cycle Date Range",
+                value=[df["cycle_date"].min(), df["cycle_date"].max()] if len(df) > 0 else None,
+                help="Filter by cycle date range"
+            )
+        
+        # Apply filters
+        filtered_df = df.copy()
+        
+        if selected_customer != "All":
+            filtered_df = filtered_df[filtered_df["customer"] == selected_customer]
+            
+        if is_admin and selected_user != "All":
+            filtered_df = filtered_df[filtered_df["uploaded_by"] == selected_user]
+            
+        if date_range and len(date_range) == 2:
+            filtered_df = filtered_df[
+                (filtered_df["cycle_date"] >= date_range[0]) & 
+                (filtered_df["cycle_date"] <= date_range[1])
+            ]
+        
+        # Show number of records after filtering
+        st.info(f"Showing {len(filtered_df)} of {len(df)} records")
+        
+        # Download option
+        if not filtered_df.empty:
+            st.download_button(
+                label="Download Filtered Data",
+                data=filtered_df.to_csv(index=False).encode('utf-8'),
+                file_name=f"cycle_count_data_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv"
+            )
+        
+        # Format display
+        if not filtered_df.empty:
+            # Exclude ID column
+            if 'id' in filtered_df.columns:
+                filtered_df = filtered_df.drop(columns=['id'])
+            
+            # Capitalize customer names
+            if 'customer' in filtered_df.columns:
+                filtered_df['customer'] = filtered_df['customer'].str.upper()
+            
+            # Format date/time columns
+            if 'cycle_date' in filtered_df.columns:
+                filtered_df['cycle_date'] = pd.to_datetime(filtered_df['cycle_date']).dt.strftime('%b %d, %Y')
+            
+            if 'uploaded_at' in filtered_df.columns:
+                filtered_df['uploaded_at'] = pd.to_datetime(filtered_df['uploaded_at']).dt.strftime('%b %d, %Y %I:%M %p')
+        
+        # Charts tab layout
+        tab1, tab2, tab3 = st.tabs(["Data", "Charts", "Top Variances"])
+        
+        with tab1:
+            st.subheader("Cycle Count Data")
+            st.dataframe(filtered_df)
+        
+        with tab2:
+            # Display charts
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                render_submission_chart(filtered_df.to_dict('records'))
+                render_variance_histogram(filtered_df.to_dict('records'))
+                
+            with col2:
+                render_customer_pie_chart(filtered_df.to_dict('records'))
+                render_user_submission_chart(filtered_df.to_dict('records'))
+        
+        with tab3:
+            # Display top variance items
+            st.subheader("Items with Highest Variance")
+            limit = st.slider("Number of items to show", 5, 30, 10)
+            render_top_variance_items(filtered_df.to_dict('records'), limit=limit)
+            
+            # Display the top variance items table
+            st.subheader("Top Items by Absolute Variance")
+            filtered_df["abs_variance"] = filtered_df["variance"].abs()
+            top_items = filtered_df.sort_values("abs_variance", ascending=False).head(limit)
+            st.dataframe(top_items[["item_id", "description", "system_count", "actual_count", "variance", "percent_diff"]])
+    
+    except Exception as e:
+        st.error(f"Error loading dashboard: {str(e)}")
+        st.exception(e)
+
 # Main function
 def main():
     # Call authenticate to handle login form display
     name, auth_status, username = authenticate()
     
     # Different display based on authentication status
-    if show_authentication_status():
+    if st.session_state.get("authentication_status"):
         # AUTHENTICATED USER CONTENT
+        col1, col2, col3 = st.columns([3, 0.5, 0.5])
+        with col1:
+            st.write(f'Welcome, **{st.session_state["name"]}**')
+        with col2:
+            # Empty column for spacing
+            pass
+        with col3:
+            logout_top()
                 
-        # Display logout button
-        logout()
-        
         # Check for admin access
         is_admin = check_admin_access()
         
-        # Display appropriate content based on role
-        if is_admin:
-            st.sidebar.success("Admin access granted. Please use the Dashboard page.")
-            st.markdown("## Welcome to Cycle Count Tracker Admin Panel")
-            st.markdown("""
-            Please navigate to the Dashboard page using the sidebar to:
-            - View all submitted cycle counts
-            - Filter data by customer, date, or user
-            - View summary charts and statistics
-            - Download data as CSV
-            """)
-        else:
-            # Manager view - show upload form
+        # Create tabs for Data Management and Dashboard
+        dashboard_tab, top_variances_tab, upload_tab = st.tabs(["Dashboard", "Top Variances", "Data Management"]   )
+        
+        with upload_tab:
             upload_success = render_upload_form()
             if upload_success:
                 st.session_state.show_upload_success = True
+        
+        with dashboard_tab:
+            st.title("Dashboard")
+            render_dashboard()
+            
+        with top_variances_tab:
+            st.title("Top Variances")
+            render_top_variance_items()
+            
     else:
         # NON-AUTHENTICATED USER CONTENT
         
@@ -99,6 +260,7 @@ def main():
         st.markdown("""
         Welcome to the Cycle Count Tracker application. Please log in to continue.
         """)
+
 
 if __name__ == "__main__":
     main() 
