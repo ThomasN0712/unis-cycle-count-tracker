@@ -164,6 +164,6 @@ def render_dashboard_summary(data):
     col2.metric("Total Customers", total_customers)
     col3.metric("Total Users", total_users)
     
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
     col1.metric("Items Last Week", items_last_week)
     col2.metric("Items Last Month", items_last_month) 
