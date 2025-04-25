@@ -1,6 +1,9 @@
 import streamlit as st
 from config.auth_config import get_authenticator, is_admin
 
+import streamlit as st
+from config.auth_config import get_authenticator, is_admin
+
 def authenticate():
     """
     Handle authentication using streamlit-authenticator
@@ -24,19 +27,20 @@ def authenticate():
     # Get the authenticator from session state
     authenticator = st.session_state["authenticator"]
     
-    # Display the login form with a container to control positioning
-    with st.container():
-        name, authentication_status, username = authenticator.login("Login", "main")
+    # Render the login widget and check authentication status
+    authentication_status = authenticator.login()
+
+    # If authentication is successful, store user info in session state
+    if authentication_status:
+        st.session_state["name"] = authenticator.get_user_name()  # Assuming get_user_name() fetches the name
+        st.session_state["username"] = authenticator.get_username()  # Assuming get_username() fetches the username
     
-    # Update session state
-    if authentication_status is not None:
-        st.session_state["authentication_status"] = authentication_status
-    if name is not None:
-        st.session_state["name"] = name
-    if username is not None:
-        st.session_state["username"] = username
-    
+    # Return user information from session state
+    name = st.session_state["name"]
+    username = st.session_state["username"]
+
     return name, authentication_status, username
+
 
 def show_authentication_status():
     """
@@ -45,9 +49,10 @@ def show_authentication_status():
     Returns:
         bool: True if authenticated, False otherwise
     """
-    if st.session_state["authentication_status"]:
-        st.sidebar.write(f'Welcome *{st.session_state["name"]}*')
-        return True
+    # Check if session state exists first
+    if "authentication_status" not in st.session_state:
+        st.session_state["authentication_status"] = None
+
     elif st.session_state["authentication_status"] == False:
         st.error("Username/password is incorrect")
         return False
@@ -59,13 +64,6 @@ def logout():
     """
     Handle logout functionality
     """
-    if "authenticator" in st.session_state:
-        authenticator = st.session_state["authenticator"]
-        authenticator.logout("Logout", "sidebar")
-    else:
-        # Re-initialize authenticator if needed
-        authenticator = get_authenticator()
-        authenticator.logout("Logout", "sidebar")
         
     # Make sure session state is cleared properly on logout
     if st.session_state["authentication_status"] == False:
