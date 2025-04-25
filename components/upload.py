@@ -166,7 +166,7 @@ def render_upload_form():
                             "customer": customer_meta,  # Use the metadata value
                             "notes": row_data["notes"] or "",
                             "cycle_date": cycle_date_meta.isoformat(),  # Use the metadata value
-                            "uploaded_by": st.session_state.get("username", "manual_entry"),
+                            "uploaded_by": st.session_state.get("name", "manual_entry"),
                             "uploaded_at": datetime.now().isoformat()
                         }
                         
