@@ -70,13 +70,6 @@ def logout_top():
     if st.session_state.get("authentication_status") == False:
         st.session_state["authentication_status"] = None
 
-# Modified authentication status display
-def show_user_welcome():
-    if st.session_state.get("authentication_status"):
-        st.write(f'Welcome *{st.session_state["name"]}*')
-        return True
-    return False
-
 # Dashboard function - moved from Dashboard.py
 def render_dashboard():
     try:
@@ -97,7 +90,6 @@ def render_dashboard():
             # For managers, only show their own uploads
             username = st.session_state.get("name")  # Use name instead of username
             df = df[df["uploaded_by"] == username]
-            st.info(f"Showing cycle counts uploaded by {username}")
         else:
             st.success("Admin view: Showing all cycle counts")
             
@@ -203,14 +195,20 @@ def render_dashboard():
         with tab3:
             # Display top variance items
             st.subheader("Items with Highest Variance")
-            limit = st.slider("Number of items to show", 5, 30, 10)
+            limit = st.number_input("Number of items to show", min_value=5, max_value=30, value=10)
+            # show filter by customer
+            customers = ["All"] + sorted(filtered_df["customer"].unique().tolist())
+            selected_customer = st.selectbox("Customer", customers)
+            if selected_customer != "All":
+                filtered_df = filtered_df[filtered_df["customer"] == selected_customer]
+            
             render_top_variance_items(filtered_df.to_dict('records'), limit=limit)
             
             # Display the top variance items table
             st.subheader("Top Items by Absolute Variance")
             filtered_df["abs_variance"] = filtered_df["variance"].abs()
             top_items = filtered_df.sort_values("abs_variance", ascending=False).head(limit)
-            st.dataframe(top_items[["item_id", "description", "system_count", "actual_count", "variance", "percent_diff"]])
+            st.dataframe(top_items[["item_id", "description", "customer", "location", "system_count", "actual_count", "variance", "percent_diff"]])
     
     except Exception as e:
         st.error(f"Error loading dashboard: {str(e)}")
@@ -224,7 +222,7 @@ def main():
     # Different display based on authentication status
     if st.session_state.get("authentication_status"):
         # AUTHENTICATED USER CONTENT
-        col1, col2, col3 = st.columns([3, 0.5, 0.5])
+        col1, col2, col3 = st.columns([3, 16, 1])
         with col1:
             st.write(f'Welcome, **{st.session_state["name"]}**')
         with col2:
@@ -237,7 +235,7 @@ def main():
         is_admin = check_admin_access()
         
         # Create tabs for Data Management and Dashboard
-        dashboard_tab, top_variances_tab, upload_tab = st.tabs(["Dashboard", "Top Variances", "Data Management"]   )
+        dashboard_tab, upload_tab = st.tabs(["Dashboard", "Data Management"]   )
         
         with upload_tab:
             upload_success = render_upload_form()
@@ -247,10 +245,6 @@ def main():
         with dashboard_tab:
             st.title("Dashboard")
             render_dashboard()
-            
-        with top_variances_tab:
-            st.title("Top Variances")
-            render_top_variance_items()
             
     else:
         # NON-AUTHENTICATED USER CONTENT
