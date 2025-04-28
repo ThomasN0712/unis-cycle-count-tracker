@@ -91,7 +91,7 @@ def render_dashboard():
             username = st.session_state.get("name")  # Use name instead of username
             df = df[df["uploaded_by"] == username]
         else:
-            st.success("Admin view: Showing all cycle counts")
+            st.success("Admin view")
             
         # Continue with dashboard display as before
         if df.empty:
