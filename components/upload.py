@@ -106,11 +106,6 @@ def render_upload_form():
         with st.form("table_form"):
             # Create table headers with new fields
             cols = st.columns([1.5, 2, 1.5, 1.5, 1, 1, 1, 1.5, 1.5, 1.5, 2])
-            headers = ["Item ID*", "Description*", "Lot Number", "Exp Date", "Unit", "Status", "LP", "Location*", 
-                      "System Count*", "Actual Count*", "Notes"]
-            
-            for i, header in enumerate(headers):
-                cols[i].write(f"**{header}**")
             
             # Create a row for each data entry
             for i, row_data in enumerate(st.session_state.table_data):
@@ -118,18 +113,18 @@ def render_upload_form():
                 
                 # Item ID (required)
                 row_data["item_id"] = cols[0].text_input(
-                    "Item ID", 
+                    "Item ID*", 
                     value=row_data["item_id"], 
                     key=f"item_id_{i}",
-                    label_visibility="collapsed"
+                    help="Enter the item ID"
                 )
                 
                 # Description
                 row_data["description"] = cols[1].text_input(
-                    "Description", 
+                    "Description*", 
                     value=row_data["description"], 
                     key=f"desc_{i}",
-                    label_visibility="collapsed"
+                    help="Enter the item description"
                 )
                 
                 # Lot Number
@@ -137,7 +132,7 @@ def render_upload_form():
                     "Lot Number", 
                     value=row_data["lot_number"], 
                     key=f"lot_{i}",
-                    label_visibility="collapsed"
+                    help="Enter the item lot number (optional)"
                 )
                 
                 # Expiration Date
@@ -145,7 +140,7 @@ def render_upload_form():
                     "Expiration Date",
                     value=row_data["expiration_date"] if row_data["expiration_date"] else None,
                     key=f"exp_{i}",
-                    label_visibility="collapsed"
+                    help="Enter the item expiration date (optional)"
                 )
                 row_data["expiration_date"] = exp_date
                 
@@ -154,7 +149,7 @@ def render_upload_form():
                     "Unit",
                     value=row_data["unit"],
                     key=f"unit_{i}",
-                    label_visibility="collapsed"
+                    help="Enter the item unit (optional)"
                 )
                 
                 # Status
@@ -162,7 +157,7 @@ def render_upload_form():
                     "Status",
                     value=row_data["status"],
                     key=f"status_{i}",
-                    label_visibility="collapsed"
+                    help="Enter the item status (optional)"
                 )
                 
                 # LP
@@ -170,31 +165,31 @@ def render_upload_form():
                     "LP",
                     value=row_data["lp"],
                     key=f"lp_{i}",
-                    label_visibility="collapsed"
+                    help="Enter the item LP (optional)"
                 )
                 
                 # Location
                 row_data["location"] = cols[7].text_input(
-                    "Location",
+                    "Location*",
                     value=row_data["location"],
                     key=f"location_{i}",
-                    label_visibility="collapsed"
+                    help="Enter the item location"
                 )
                 
                 # System Count
                 row_data["system_count"] = cols[8].text_input(
-                    "System Count", 
+                    "System Count*", 
                     value=row_data["system_count"],
                     key=f"system_{i}",
-                    label_visibility="collapsed"
+                    help="Enter the item count from the system"
                 )
                 
                 # Actual Count
                 row_data["actual_count"] = cols[9].text_input(
-                    "Actual Count", 
+                    "Actual Count*", 
                     value=row_data["actual_count"],
                     key=f"actual_{i}",
-                    label_visibility="collapsed"
+                    help="Enter the item count from the actual physical count"
                 )
                 
                 # Notes
@@ -202,7 +197,7 @@ def render_upload_form():
                     "Notes", 
                     value=row_data["notes"], 
                     key=f"notes_{i}",
-                    label_visibility="collapsed"
+                    help="Enter any additional notes about the item"
                 )
             
             # Submit button
@@ -308,7 +303,7 @@ def render_upload_form():
                 # Create filters
                 if 'customer' in df.columns:
                     customers = ['All'] + sorted(df['customer'].unique().tolist())
-                    selected_customer = st.selectbox("Filter by Customer", customers)
+                    selected_customer = st.selectbox("Filter by Customer", customers, key="filter_customer")
                     
                     if selected_customer != 'All':
                         filtered_df = df[df['customer'] == selected_customer]
@@ -470,16 +465,37 @@ def render_upload_form():
                 st.info("No records to delete.")
             else:
                 # Create filters
+                col1, col2 = st.columns(2)
+                
+                # Customer filter
                 if 'customer' in df.columns:
                     customers = ['All'] + sorted(df['customer'].unique().tolist())
-                    delete_customer = st.selectbox("Filter by Customer", customers, key="del_customer")
-                    
-                    if delete_customer != 'All':
-                        delete_df = df[df['customer'] == delete_customer]
-                    else:
-                        delete_df = df
-                else:
-                    delete_df = df
+                    with col1:
+                        delete_customer = st.selectbox("Filter by Customer", customers, key="del_customer")
+                
+                # Date range filter
+                with col2:
+                    delete_date_range = st.date_input(
+                        "Filter by Cycle Date",
+                        value=[],
+                        key="del_date_range",
+                        help="Select date range for filtering records"
+                    )
+                
+                # Apply filters
+                delete_df = df.copy()
+                
+                if 'customer' in df.columns and delete_customer != 'All':
+                    delete_df = delete_df[delete_df['customer'] == delete_customer]
+                
+                if len(delete_date_range) == 2:
+                    start_date, end_date = delete_date_range
+                    if 'cycle_date' in delete_df.columns:
+                        delete_df['cycle_date'] = pd.to_datetime(delete_df['cycle_date']).dt.date
+                        delete_df = delete_df[
+                            (delete_df['cycle_date'] >= start_date) & 
+                            (delete_df['cycle_date'] <= end_date)
+                        ]
                 
                 # Display records that can be deleted
                 if not delete_df.empty:
@@ -488,49 +504,63 @@ def render_upload_form():
                                     'customer', 'cycle_date']
                     delete_display_df = delete_df[display_cols].head(100)  # Limit for performance
                     
-                    st.write(f"Showing {len(delete_display_df)} most recent records (up to 100)")
-                    st.dataframe(delete_display_df)
+                    st.write(f"Showing {len(delete_display_df)} records (up to 100)")
                     
-                    # Select record to delete
-                    delete_indices = [f"{row['item_id']} - {row['description']} ({row['customer']})" 
-                                    for _, row in delete_df.head(100).iterrows()]
+                    # Initialize session state for selected records if needed
+                    if "selected_delete_records" not in st.session_state:
+                        st.session_state.selected_delete_records = set()
                     
-                    if delete_indices:
-                        selected_delete_idx = st.selectbox("Select record to delete:", 
-                                                        options=range(len(delete_indices)),
-                                                        format_func=lambda x: delete_indices[x],
-                                                        key="del_select")
-                        
-                        record_to_delete = delete_df.iloc[selected_delete_idx]
-                        record_id = record_to_delete.get('id')
-                        
-                        # Confirmation
-                        st.info(f"""
-                        You are about to delete:
-                        - Item: {record_to_delete.get('item_id')}
-                        - Description: {record_to_delete.get('description')}
-                        - Customer: {record_to_delete.get('customer')}
-                        """)
-                        
-                        # Required confirmation
-                        confirm_text = st.text_input("Type 'DELETE' to confirm:")
-                        
-                        if confirm_text == "DELETE":
-                            if st.button("Delete Record", type="primary"):
-                                try:
-                                    # Delete from database
+                    # Select All checkbox
+                    select_all = st.checkbox("Select All Records", key="select_all_delete")
+                    if select_all:
+                        st.session_state.selected_delete_records = set(range(len(delete_display_df)))
+                    elif select_all == False and len(st.session_state.selected_delete_records) == len(delete_display_df):
+                        st.session_state.selected_delete_records = set()  # Clear if "select all" was unchecked
+                    
+                    # Display records with checkboxes
+                    st.write("### Select Records to Delete")
+                    
+                    # Show records in a more structured way
+                    for i, (idx, row) in enumerate(delete_display_df.iterrows()):
+                        col1, col2 = st.columns([1, 20])
+                        with col1:
+                            # Use session state to maintain checkbox state
+                            is_checked = i in st.session_state.selected_delete_records
+                            if st.checkbox("", value=is_checked, key=f"del_check_{i}"):
+                                st.session_state.selected_delete_records.add(i)
+                            else:
+                                if i in st.session_state.selected_delete_records:
+                                    st.session_state.selected_delete_records.remove(i)
+                        with col2:
+                            st.write(f"{row['item_id']} - {row['description']} - {row['customer']} - {row['cycle_date']}")
+                    
+                    # Bulk delete action
+                    selected_records = list(st.session_state.selected_delete_records)
+                    if selected_records:
+                        st.warning(f"You've selected {len(selected_records)} record(s) to delete")
+                        if st.button("Delete Selected Records", type="primary", key="bulk_delete_btn"):
+                            try:
+                                success_count = 0
+                                for i in selected_records:
+                                    record_id = delete_df.iloc[i].get('id')
                                     deleted = db_client.delete_cycle_count(record_id)
                                     if deleted:
-                                        st.success("Record deleted successfully!")
-                                        st.rerun()
-                                    else:
-                                        st.error("Failed to delete record.")
-                                except Exception as e:
-                                    st.error(f"Error deleting record: {str(e)}")
+                                        success_count += 1
+                                
+                                if success_count > 0:
+                                    st.success(f"Successfully deleted {success_count} record(s)!")
+                                    # Clear the selection after successful deletion
+                                    st.session_state.selected_delete_records = set()
+                                    st.rerun()
+                                else:
+                                    st.error("Failed to delete records.")
+                            except Exception as e:
+                                st.error(f"Error deleting records: {str(e)}")
+                    else:
+                        st.info("Select records to delete")
     
     # Tab 3: Import/Export (available to all, but it's tab2 for non-admins)
     with tab3:
-        st.subheader("Bulk Import/Export")
         
         col1, col2 = st.columns(2)
         
@@ -550,7 +580,19 @@ def render_upload_form():
                     help="Filter data by cycle date before exporting"
                 )
                 
-                export_df = df.copy()
+                # Add this code to define customers
+                if 'customer' in df.columns:
+                    customers = ['All'] + sorted(df['customer'].unique().tolist())
+                else:
+                    customers = ['All']
+                
+                # Filter by customer
+                export_customer = st.selectbox("Filter by Customer", customers, key="export_customer")
+                
+                export_df = df.copy()  # Move this line here first
+
+                if export_customer != 'All':
+                    export_df = export_df[export_df['customer'] == export_customer]
                 
                 if len(export_date_range) == 2:
                     start_date, end_date = export_date_range
