@@ -1,4 +1,4 @@
-# # Table name
+# # OLD Table name
 # CYCLE_COUNTS_TABLE = "cycle_counts"
 
 # # SQL for table creation
@@ -25,27 +25,28 @@
 # );
 # """
 
-# # Column definitions (for reference in application code)
-# COLUMNS = {
-#     "id": "id",
-#     "item_id": "item_id",
-#     "description": "description",
-#     "lot_number": "lot_number",
-#     "expiration_date": "expiration_date",
-#     "unit": "unit",
-#     "status": "status",
-#     "lp": "lp",
-#     "location": "location",
-#     "system_count": "system_count",
-#     "actual_count": "actual_count",
-#     "variance": "variance",
-#     "percent_diff": "percent_diff",
-#     "customer": "customer",
-#     "notes": "notes",
-#     "cycle_date": "cycle_date",
-#     "uploaded_by": "uploaded_by",
-#     "uploaded_at": "uploaded_at"
-# } 
+# New schema
+# Column definitions (for reference in application code)
+COLUMNS = {
+    "id": "id",
+    "item_id": "item_id",
+    "description": "description",
+    "lot_number": "lot_number",
+    "expiration_date": "expiration_date",
+    "unit": "unit",
+    "status": "status",
+    "lp": "lp",
+    "location": "location",
+    "system_count": "system_count",
+    "actual_count": "actual_count",
+    "variance": "variance",
+    "percent_diff": "percent_diff",
+    "customer": "customer",
+    "notes": "notes",
+    "cycle_date": "cycle_date",
+    "uploaded_by": "uploaded_by",
+    "uploaded_at": "uploaded_at"
+} 
 
 # Table names
 CYCLE_COUNTS_TABLE = "cycle_counts"
@@ -55,7 +56,7 @@ USERS_TABLE = "users"
 # SQL to create warehouses table
 CREATE_WAREHOUSES_TABLE = """
 CREATE TABLE IF NOT EXISTS warehouses (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id SERIAL PRIMARY KEY,
     name TEXT NOT NULL UNIQUE,
     address TEXT,
     created_at TIMESTAMP DEFAULT NOW()
@@ -69,7 +70,7 @@ CREATE TABLE IF NOT EXISTS users (
     username TEXT NOT NULL UNIQUE,
     name TEXT NOT NULL,
     role TEXT NOT NULL CHECK (role IN ('admin', 'manager')),
-    warehouse_id UUID REFERENCES warehouses(id),
+    warehouse_id INTEGER REFERENCES warehouses(id),
     created_at TIMESTAMP DEFAULT NOW()
 );
 """
@@ -85,7 +86,7 @@ CREATE TABLE IF NOT EXISTS cycle_counts (
     unit TEXT,
     status TEXT,
     lp TEXT,
-    location_id UUID REFERENCES warehouses(id) ON DELETE SET NULL,
+    location TEXT NOT NULL,
     system_count NUMERIC NOT NULL,
     actual_count NUMERIC NOT NULL,
     variance NUMERIC NOT NULL,
@@ -94,7 +95,8 @@ CREATE TABLE IF NOT EXISTS cycle_counts (
     notes TEXT,
     cycle_date DATE NOT NULL,
     uploaded_by UUID REFERENCES users(id) ON DELETE SET NULL,
-    uploaded_at TIMESTAMP NOT NULL DEFAULT NOW()
+    uploaded_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    warehouse_id INTEGER REFERENCES warehouses(id) NOT NULL
 );
 """
 
@@ -108,7 +110,7 @@ CYCLE_COUNTS_COLUMNS = {
     "unit": "unit",
     "status": "status",
     "lp": "lp",
-    "location_id": "location_id",
+    "location": "location",
     "system_count": "system_count",
     "actual_count": "actual_count",
     "variance": "variance",
@@ -117,7 +119,8 @@ CYCLE_COUNTS_COLUMNS = {
     "notes": "notes",
     "cycle_date": "cycle_date",
     "uploaded_by": "uploaded_by",
-    "uploaded_at": "uploaded_at"
+    "uploaded_at": "uploaded_at",
+    "warehouse_id": "warehouse_id"
 }
 
 WAREHOUSES_COLUMNS = {
