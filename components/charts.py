@@ -73,7 +73,9 @@ def render_variance_histogram(data):
     # Create the histogram
     fig = px.histogram(df, x="variance", 
                       title="Distribution of Variances",
-                      labels={"variance": "Variance", "count": "Frequency"})
+                      labels={"variance": "Variance", "count": "Frequency"},
+                      nbins=30
+                      ) 
     
     st.plotly_chart(fig, use_container_width=True)
 
@@ -166,4 +168,62 @@ def render_dashboard_summary(data):
     
     col1, col2, col3 = st.columns(3)
     col1.metric("Items Last Week", items_last_week)
-    col2.metric("Items Last Month", items_last_month) 
+    col2.metric("Items Last Month", items_last_month)
+
+def render_warehouse_distribution(data):
+    """
+    Render a chart showing distribution of items across warehouses
+    
+    Args:
+        data (list): List of cycle count records
+    """
+    if not data:
+        st.info("No data available to display")
+        return
+    
+    # Convert to DataFrame
+    df = pd.DataFrame(data)
+    
+    if 'warehouse' not in df.columns:
+        st.info("Warehouse data not available in records")
+        return
+    
+    # Group by warehouse
+    counts_by_warehouse = df.groupby("warehouse").size().reset_index(name="count")
+    counts_by_warehouse.columns = ["warehouse", "count"]
+    
+    # Create the chart
+    fig = px.bar(counts_by_warehouse, x="warehouse", y="count", 
+                title="Items by Warehouse Location",
+                labels={"warehouse": "Warehouse", "count": "Number of Items"})
+    
+    st.plotly_chart(fig, use_container_width=True)
+
+def render_improved_variance_chart(data):
+    """
+    Render an improved visualization of variances by customer and warehouse
+    
+    Args:
+        data (list): List of cycle count records
+    """
+    if not data:
+        st.info("No data available to display")
+        return
+    
+    # Convert to DataFrame
+    df = pd.DataFrame(data)
+    
+    # Calculate total variance by warehouse and customer
+    pivot = df.pivot_table(
+        values="variance", 
+        index="warehouse", 
+        columns="customer", 
+        aggfunc="sum"
+    ).fillna(0)
+    
+    # Create a heatmap
+    fig = px.imshow(pivot, 
+                    labels=dict(x="Customer", y="Warehouse", color="Total Variance"),
+                    title="Variance Heatmap by Warehouse and Customer")
+    
+    st.plotly_chart(fig, use_container_width=True) 
