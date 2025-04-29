@@ -1,7 +1,7 @@
 import streamlit as st
 import os
 import pandas as pd
-from components.authentication import authenticate, show_authentication_status, logout, check_admin_access
+from components.authentication import authenticate, show_authentication_status, logout, check_admin_access, check_permissions
 from components.upload import render_upload_form
 from components.charts import (
     render_submission_chart, 
@@ -57,18 +57,8 @@ if "username" not in st.session_state:
 
 # Modified logout function to place at top of page
 def logout_top():
-    if "authenticator" in st.session_state:
-        authenticator = st.session_state["authenticator"]
-        authenticator.logout("Logout", "main")
-    else:
-        # Re-initialize authenticator if needed
-        from config.auth_config import get_authenticator
-        authenticator = get_authenticator()
-        authenticator.logout("Logout", "main")
-        
-    # Make sure session state is cleared properly on logout
-    if st.session_state.get("authentication_status") == False:
-        st.session_state["authentication_status"] = None
+    logout()
+    st.rerun()
 
 # Dashboard function - moved from Dashboard.py
 def render_dashboard():
@@ -84,13 +74,30 @@ def render_dashboard():
         # Convert to DataFrame
         df = pd.DataFrame(data)
         
+        # Get warehouse data for lookups
+        warehouses_data = db_client.get_all_warehouses()
+        warehouse_map = {w['id']: w['name'] for w in warehouses_data}
+        
+        # Add warehouse name column if warehouse_id exists
+        if 'warehouse_id' in df.columns:
+            df['warehouse'] = df['warehouse_id'].apply(lambda x: warehouse_map.get(x, "Unknown"))
+        
         # Apply role-based filtering
         is_admin = check_admin_access()
         if not is_admin:
-            # For managers, only show their own uploads
-            username = st.session_state.get("name")  # Use name instead of username
-            df = df[df["uploaded_by"] == username]
+            # For managers, only show their own uploads or data from their warehouse
+            user_id = st.session_state.get("user_id")
+            warehouse_id = st.session_state.get("warehouse_id")
+            
+            # Filter by user ID if that field exists
+            if 'uploaded_by' in df.columns:
+                df = df[df["uploaded_by"] == user_id]
+            
+            # Additional filter by warehouse for managers
+            if warehouse_id and 'warehouse_id' in df.columns:
+                df = df[df["warehouse_id"] == warehouse_id]
         else:
+            
             st.success("Admin view")
             
         # Continue with dashboard display as before
@@ -107,13 +114,15 @@ def render_dashboard():
         st.subheader("Filters")
         
         # Create columns for filters
-        col1, col2, col3 = st.columns(3)
+        col1, col2, col3, col4 = st.columns(4)
         
         # Get unique values for filters
         customers = ["All"] + sorted(df["customer"].unique().tolist())
+        
         if is_admin:
             users = ["All"] + sorted(df["uploaded_by"].unique().tolist())
-        
+            warehouses = ["All"]
+
         # Add filter widgets
         with col1:
             selected_customer = st.selectbox("Customer", customers)
@@ -121,8 +130,12 @@ def render_dashboard():
         with col2:
             if is_admin:
                 selected_user = st.selectbox("Uploaded By", users)
-        
+                
         with col3:
+            if is_admin:
+                selected_warehouse = st.selectbox("Warehouse", warehouses)
+        
+        with col4:
             date_range = st.date_input(
                 "Cycle Date Range",
                 value=[df["cycle_date"].min(), df["cycle_date"].max()] if len(df) > 0 else None,
@@ -137,6 +150,9 @@ def render_dashboard():
             
         if is_admin and selected_user != "All":
             filtered_df = filtered_df[filtered_df["uploaded_by"] == selected_user]
+
+        if is_admin and selected_warehouse != "All" and 'warehouse' in filtered_df.columns:
+            filtered_df = filtered_df[filtered_df["warehouse"] == selected_warehouse]
             
         if date_range and len(date_range) == 2:
             filtered_df = filtered_df[
@@ -198,7 +214,7 @@ def render_dashboard():
             limit = st.number_input("Number of items to show", min_value=5, max_value=30, value=10)
             # show filter by customer
             customers = ["All"] + sorted(filtered_df["customer"].unique().tolist())
-            selected_customer = st.selectbox("Customer", customers)
+            selected_customer = st.selectbox("Customer", customers, key="variance_customer")
             if selected_customer != "All":
                 filtered_df = filtered_df[filtered_df["customer"] == selected_customer]
             
@@ -222,20 +238,33 @@ def main():
     # Different display based on authentication status
     if st.session_state.get("authentication_status"):
         # AUTHENTICATED USER CONTENT
-        col1, col2, col3 = st.columns([3, 16, 1])
+        col1, col2, col3 = st.columns([6, 13, 1])
         with col1:
-            st.write(f'Welcome, **{st.session_state["name"]}**')
+            welcome_msg = f'Welcome, **{st.session_state["name"]}**'
+            
+            # Add warehouse info for managers
+            if st.session_state.get("role") == "manager" and st.session_state.get("warehouse_id"):
+                db_client = SupabaseClient()
+                warehouse = db_client.get_warehouse(st.session_state.get("warehouse_id"))
+                if warehouse:
+                    welcome_msg += f' | Location: **{warehouse["name"]}**'
+            
+            st.write(welcome_msg)
+        
         with col2:
             # Empty column for spacing
             pass
+        
         with col3:
-            logout_top()
+            if st.button("Logout"):
+                logout_top()
+                st.rerun()
                 
         # Check for admin access
         is_admin = check_admin_access()
         
         # Create tabs for Data Management and Dashboard
-        dashboard_tab, upload_tab = st.tabs(["Dashboard", "Data Management"]   )
+        dashboard_tab, upload_tab = st.tabs(["Dashboard", "Data Management"])
         
         with upload_tab:
             upload_success = render_upload_form()

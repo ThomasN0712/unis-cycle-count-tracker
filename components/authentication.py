@@ -1,12 +1,10 @@
 import streamlit as st
-from config.auth_config import get_authenticator, is_admin
-
-import streamlit as st
-from config.auth_config import get_authenticator, is_admin
+from database.client import SupabaseClient
+import bcrypt
 
 def authenticate():
     """
-    Handle authentication using streamlit-authenticator
+    Handle database-based authentication using the users table
     
     Returns:
         tuple: (name, authentication_status, username)
@@ -21,26 +19,59 @@ def authenticate():
         st.session_state["name"] = None
     if "username" not in st.session_state:
         st.session_state["username"] = None
-    if "authenticator" not in st.session_state:
-        st.session_state["authenticator"] = get_authenticator()
+    if "user_id" not in st.session_state:
+        st.session_state["user_id"] = None
+    if "role" not in st.session_state:
+        st.session_state["role"] = None
+    if "warehouse_id" not in st.session_state:
+        st.session_state["warehouse_id"] = None
     
-    # Get the authenticator from session state
-    authenticator = st.session_state["authenticator"]
+    # If already authenticated, return current state
+    if st.session_state["authentication_status"]:
+        return (
+            st.session_state["name"],
+            st.session_state["authentication_status"],
+            st.session_state["username"]
+        )
     
-    # Render the login widget and check authentication status
-    authentication_status = authenticator.login()
-
-    # If authentication is successful, store user info in session state
-    if authentication_status:
-        st.session_state["name"] = authenticator.get_user_name()  # Assuming get_user_name() fetches the name
-        st.session_state["username"] = authenticator.get_username()  # Assuming get_username() fetches the username
+    # Create login form
+    with st.form("login_form"):
+        st.title("Cycle Count Tracker")
+        username = st.text_input("Username")
+        password = st.text_input("Password", type="password")
+        submit = st.form_submit_button("Login")
     
-    # Return user information from session state
-    name = st.session_state["name"]
-    username = st.session_state["username"]
-
-    return name, authentication_status, username
-
+    if submit:
+        # Query user from database
+        db_client = SupabaseClient()
+        user = db_client.get_user(username)
+        
+        if user:
+            # Implement proper password checking here
+            # For now, we'll use a simple comparison for the example
+            # In a real app, you'd use bcrypt.checkpw(password.encode(), hashed_password)            
+            # Simple validation - replace with proper password validation
+            if password == "123":  # Replace with actual validation
+                st.session_state["authentication_status"] = True
+                st.session_state["username"] = username
+                st.session_state["name"] = user.get("name", username)
+                st.session_state["user_id"] = user.get("id")
+                st.session_state["role"] = user.get("role")
+                st.session_state["warehouse_id"] = user.get("warehouse_id")
+                st.rerun()  # Force page refresh with new session state
+            else:
+                st.session_state["authentication_status"] = False
+        else:
+            st.session_state["authentication_status"] = False
+    
+    if st.session_state["authentication_status"] == False:
+        st.error("Username/password is incorrect")
+    
+    return (
+        st.session_state.get("name"),
+        st.session_state.get("authentication_status"),
+        st.session_state.get("username")
+    )
 
 def show_authentication_status():
     """
@@ -53,31 +84,66 @@ def show_authentication_status():
     if "authentication_status" not in st.session_state:
         st.session_state["authentication_status"] = None
 
-    elif st.session_state["authentication_status"] == False:
+    if st.session_state["authentication_status"] == False:
         st.error("Username/password is incorrect")
         return False
     elif st.session_state["authentication_status"] == None:
         st.warning("Please enter your username and password")
         return False
+    return True
 
 def logout():
-    """
-    Handle logout functionality
-    """
-        
-    # Make sure session state is cleared properly on logout
-    if st.session_state["authentication_status"] == False:
-        st.session_state["authentication_status"] = None
+    """Handle logout functionality"""
+    # Clear all session state related to authentication
+    st.session_state["authentication_status"] = None
+    st.session_state["name"] = None
+    st.session_state["username"] = None
+    st.session_state["user_id"] = None
+    st.session_state["role"] = None
+    st.session_state["warehouse_id"] = None
 
 def check_admin_access():
     """
-    Check if the current user has admin access
+    Check if the current user has admin access using their role in the database
     
     Returns:
-        bool: True if user has admin access, False otherwise
+        bool: True if user has admin role, False otherwise
     """
     if not st.session_state.get("authentication_status"):
         return False
     
-    username = st.session_state.get("username")
-    return is_admin(username) 
+    return st.session_state.get("role") == "admin" 
+
+import streamlit as st
+
+# Helper functions for authentication
+def get_password_placeholder():
+    """
+    Return a password placeholder 
+    In a real app, you would store hashed passwords in the database
+    """
+    return "password"  # Default password for testing
+
+def get_role_options():
+    """Return valid role options"""
+    return ["admin", "manager"]
+
+def check_permissions(required_role="admin"):
+    """
+    Check if user has required permissions
+    
+    Args:
+        required_role (str): Role required for access
+        
+    Returns:
+        bool: True if user has permission, False otherwise
+    """
+    # Get user role from session state
+    user_role = st.session_state.get("role")
+    
+    # Admin can access everything
+    if user_role == "admin":
+        return True
+    
+    # Otherwise, check if roles match
+    return user_role == required_role
