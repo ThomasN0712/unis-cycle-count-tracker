@@ -14,3 +14,11 @@
 - Add analysis tool to filter by location and track how many times an item at a location is counted.
 - Allow admin to sort cycle counts by warehouse location.
 - Restrict managers to only access and manage data tied to their assigned warehouse location.
+
+Date chart, no time, just date
+
+Add more data on dashboard regarding total percentage accuracy (30 days), accuracy by warehouse location,
+
+Backlog:
+
+- Keep track of count per workers
