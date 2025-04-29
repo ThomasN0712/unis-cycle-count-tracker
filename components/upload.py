@@ -55,7 +55,7 @@ def render_upload_form():
         st.subheader("Add New Data")
         
         # Add metadata fields at the top
-        meta_col1, meta_col2 = st.columns(2)
+        meta_col1, meta_col2, meta_col3 = st.columns(3)
         
         # Customer metadata field
         customer_meta = meta_col1.text_input("Customer Name")
@@ -64,6 +64,29 @@ def render_upload_form():
         cycle_date_meta = meta_col2.date_input("Cycle Count Date", 
                                         value=date.today(), 
                                         help="Select the date when the cycle count was performed")
+        
+        # Warehouse selection - for admins, provide dropdown, for managers use their assigned warehouse
+        if is_admin:
+            # Get all warehouses
+            warehouses = db_client.get_all_warehouses()
+            warehouse_options = {w['id']: w['name'] for w in warehouses}
+            selected_warehouse = meta_col3.selectbox(
+                "Warehouse Location", 
+                options=list(warehouse_options.keys()),
+                format_func=lambda x: warehouse_options[x],
+                help="Select the warehouse where this count was performed"
+            )
+        else:
+            # For managers, use their assigned warehouse
+            warehouse_id = st.session_state.get("warehouse_id")
+            if warehouse_id:
+                warehouse = db_client.get_warehouse(warehouse_id)
+                warehouse_name = warehouse.get("name", "Unknown") if warehouse else "Unknown"
+                meta_col3.text_input("Warehouse Location", value=warehouse_name, disabled=True)
+                selected_warehouse = warehouse_id
+            else:
+                meta_col3.error("No warehouse assigned to your account")
+                selected_warehouse = None
         
         st.markdown("---")
         
@@ -242,10 +265,11 @@ def render_upload_form():
                             "actual_count": actual_count,
                             "variance": variance,
                             "percent_diff": percent_diff,
-                            "customer": customer_meta,  # Use the metadata value
+                            "customer": customer_meta,
                             "notes": row_data["notes"] or "",
-                            "cycle_date": cycle_date_meta.isoformat(),  # Use the metadata value
-                            "uploaded_by": st.session_state.get("name", "manual_entry"),
+                            "cycle_date": cycle_date_meta.isoformat(),
+                            "uploaded_by": st.session_state.get("user_id"),
+                            "warehouse_id": selected_warehouse,
                             "uploaded_at": datetime.now().isoformat()
                         }
                         
@@ -444,7 +468,8 @@ def render_upload_form():
                                             "percent_diff": float(percent_diff),
                                             "customer": customer,
                                             "notes": notes,
-                                            "cycle_date": cycle_date.isoformat()
+                                            "cycle_date": cycle_date.isoformat(),
+                                            "warehouse_id": selected_warehouse
                                         }
                                         
                                         # Update database
@@ -526,13 +551,21 @@ def render_upload_form():
                         with col1:
                             # Use session state to maintain checkbox state
                             is_checked = i in st.session_state.selected_delete_records
-                            if st.checkbox("", value=is_checked, key=f"del_check_{i}"):
+                            if st.checkbox("Select record", value=is_checked, key=f"del_check_{i}", label_visibility="collapsed"):
                                 st.session_state.selected_delete_records.add(i)
                             else:
                                 if i in st.session_state.selected_delete_records:
                                     st.session_state.selected_delete_records.remove(i)
                         with col2:
-                            st.write(f"{row['item_id']} - {row['description']} - {row['customer']} - {row['cycle_date']}")
+                            # For displaying user information, you might need to join with users
+                            # Instead of directly displaying uploaded_by, you might need:
+                            user_name = "Unknown"
+                            user_id = row.get("uploaded_by")
+                            if user_id:
+                                user = db_client.get_user_by_id(user_id)
+                                if user:
+                                    user_name = user.get("name", "Unknown")
+                            st.write(f"{row['item_id']} - {row['description']} - {row['customer']} - {row['cycle_date']} - Uploaded by: {user_name}")
                     
                     # Bulk delete action
                     selected_records = list(st.session_state.selected_delete_records)
@@ -807,7 +840,7 @@ def render_upload_form():
                                             
                                             # Add required fields
                                             record["id"] = str(uuid.uuid4())
-                                            record["uploaded_by"] = st.session_state.get("name", "import")
+                                            record["uploaded_by"] = st.session_state.get("user_id")
                                             record["uploaded_at"] = datetime.now().isoformat()
                                             
                                             # Override any existing cycle_date with the selected date
