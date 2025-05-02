@@ -43,11 +43,11 @@ def render_upload_form():
     
     # Role based tabs - define tabs based on role
     if is_admin:
-        tabs = st.tabs(["Add New Data", "Edit Existing", "Import/Export", "Delete Records"])
+        tabs = st.tabs(["Add New Data", "Edit Existing", "Import", "Delete Records"])
         tab1, tab2, tab3, tab4 = tabs
     else:
-        tabs = st.tabs(["Add New Data", "Import/Export"])
-        tab1, tab3 = tabs  # Note: tab3 here is actually "Import/Export" for non-admins
+        tabs = st.tabs(["Add New Data", "Import"])
+        tab1, tab3 = tabs  # Note: tab3 here is actually "Import" for non-admins
         st.warning("For editing or deleting records, please contact your administrator.")
     
     # Tab 1: Add new record in table format (available to all roles)
@@ -594,285 +594,231 @@ def render_upload_form():
     
     # Tab 3: Import/Export (available to all, but it's tab2 for non-admins)
     with tab3:
+        st.write("### Import Data")
         
-        col1, col2 = st.columns(2)
+        # Upload file
+        uploaded_file = st.file_uploader("Upload CSV or Excel file", 
+                                        type=["csv", "xlsx", "xls"])
         
-        with col1:
-            st.write("### Export Data")
-            
-            # Export options
-            export_format = st.radio("Export format:", 
-                                    options=["CSV", "Excel"],
-                                    horizontal=True)
-            
-            if not df.empty:
-                # Apply date filter for export
-                export_date_range = st.date_input(
-                    "Date range (optional):",
-                    value=[],
-                    help="Filter data by cycle date before exporting"
-                )
-                
-                # Add this code to define customers
-                if 'customer' in df.columns:
-                    customers = ['All'] + sorted(df['customer'].unique().tolist())
+        if uploaded_file is not None:
+            try:
+                # Process uploaded file - properly use the first row as headers
+                if uploaded_file.name.endswith('.csv'):
+                    import_df = pd.read_csv(uploaded_file)  # Remove header=None
                 else:
-                    customers = ['All']
+                    import_df = pd.read_excel(uploaded_file)  # Remove header=None
                 
-                # Filter by customer
-                export_customer = st.selectbox("Filter by Customer", customers, key="export_customer")
+                # Convert all column names to lowercase - handle both string and non-string columns
+                import_df.columns = [str(col).lower().strip() if isinstance(col, str) else str(col) for col in import_df.columns]
                 
-                export_df = df.copy()  # Move this line here first
-
-                if export_customer != 'All':
-                    export_df = export_df[export_df['customer'] == export_customer]
+                # Column name mapping dictionary - maps various possible names to our standard fields
+                column_mapping = {
+                    # Standard name: [list of possible variant names]
+                    "item_id": ["item_id", "itemid", "item_number", "itemnumber", "item", "sku", "item code", "itemcode", "part_number", "partnumber", "0"],
+                    "description": ["description", "desc", "item_description", "itemdescription", "product_description", "name", "item_name", "product_name", "product", "1"],
+                    "lot_number": ["lot_number", "lotnumber", "lot", "lot_no", "lot#", "batch", "batch_number", "batchnumber", "2"],
+                    "expiration_date": ["expiration_date", "expirationdate", "expiration", "exp_date", "expdate", "exp", "expiry_date", "expirydate", "expiry", "3"],
+                    "unit": ["unit", "uom", "measure", "unit_of_measure", "unitofmeasure", "units", "4"],
+                    "status": ["status", "state", "condition", "item_status", "5"],
+                    "lp": ["lp", "license_plate", "licenseplate", "pallet_id", "palletid", "6"],
+                    "location": ["location", "loc", "storage_location", "storagelocation", "bin", "bin_location", "warehouse_location", "7"],
+                    "system_count": ["system_count", "systemcount", "expected_count", "expectedcount", "expected", "system_qty", "qty", "system", "book_count", "bookcount", "8"],
+                    "actual_count": ["actual_count", "actualcount", "counted", "physical_count", "physicalcount", "count", "physical", "actual_qty", "actual", "9"],
+                    "customer": ["customer", "customer_name", "customername", "client", "client_name", "account", "10"],
+                    "notes": ["notes", "note", "comments", "comment", "remarks", "observation", "observations", "details", "11"]
+                }
                 
-                if len(export_date_range) == 2:
-                    start_date, end_date = export_date_range
-                    if 'cycle_date' in export_df.columns:
-                        export_df['cycle_date'] = pd.to_datetime(export_df['cycle_date']).dt.date
-                        export_df = export_df[
-                            (export_df['cycle_date'] >= start_date) & 
-                            (export_df['cycle_date'] <= end_date)
-                        ]
+                # Check if columns might be numeric indices
+                has_numeric_columns = any(col.isdigit() for col in import_df.columns if isinstance(col, str))
                 
-                if export_format == "CSV":
-                    export_data = export_df.to_csv(index=False).encode('utf-8')
-                    file_ext = "csv"
-                    mime = "text/csv"
-                else:  # Excel
-                    buffer = io.BytesIO()
-                    export_df.to_excel(buffer, index=False)
-                    export_data = buffer.getvalue()
-                    file_ext = "xlsx"
-                    mime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                
-                st.download_button(
-                    label=f"Download {export_format}",
-                    data=export_data,
-                    file_name=f"cycle_count_data_{datetime.now().strftime('%Y%m%d_%H%M')}.{file_ext}",
-                    mime=mime
-                )
-            else:
-                st.info("No data available to export.")
-        
-        with col2:
-            st.write("### Import Data")
-            
-            # Upload file
-            uploaded_file = st.file_uploader("Upload CSV or Excel file", 
-                                            type=["csv", "xlsx", "xls"])
-            
-            if uploaded_file is not None:
-                try:
-                    # Process uploaded file - properly use the first row as headers
+                # If first row might actually be data (numeric column names), try to fix it
+                if has_numeric_columns or all(isinstance(col, int) or (isinstance(col, str) and col.isdigit()) for col in import_df.columns):
+                    st.warning("Your file appears to be missing headers. Attempting to infer column meanings...")
+                    
+                    # Reset the index to make the first row of data become column headers
+                    # First read the file again to get a fresh copy
                     if uploaded_file.name.endswith('.csv'):
-                        import_df = pd.read_csv(uploaded_file)  # Remove header=None
+                        import_df = pd.read_csv(uploaded_file, header=None)
                     else:
-                        import_df = pd.read_excel(uploaded_file)  # Remove header=None
+                        import_df = pd.read_excel(uploaded_file, header=None)
                     
-                    # Convert all column names to lowercase - handle both string and non-string columns
-                    import_df.columns = [str(col).lower().strip() if isinstance(col, str) else str(col) for col in import_df.columns]
+                    # Map the numeric columns to standard names based on position
+                    standard_fields = ["item_id", "description", "lot_number", "expiration_date", 
+                                        "unit", "status", "lp", "location", 
+                                        "system_count", "actual_count", "customer", "notes"]
                     
-                    # Column name mapping dictionary - maps various possible names to our standard fields
-                    column_mapping = {
-                        # Standard name: [list of possible variant names]
-                        "item_id": ["item_id", "itemid", "item_number", "itemnumber", "item", "sku", "item code", "itemcode", "part_number", "partnumber", "0"],
-                        "description": ["description", "desc", "item_description", "itemdescription", "product_description", "name", "item_name", "product_name", "product", "1"],
-                        "lot_number": ["lot_number", "lotnumber", "lot", "lot_no", "lot#", "batch", "batch_number", "batchnumber", "2"],
-                        "expiration_date": ["expiration_date", "expirationdate", "expiration", "exp_date", "expdate", "exp", "expiry_date", "expirydate", "expiry", "3"],
-                        "unit": ["unit", "uom", "measure", "unit_of_measure", "unitofmeasure", "units", "4"],
-                        "status": ["status", "state", "condition", "item_status", "5"],
-                        "lp": ["lp", "license_plate", "licenseplate", "pallet_id", "palletid", "6"],
-                        "location": ["location", "loc", "storage_location", "storagelocation", "bin", "bin_location", "warehouse_location", "7"],
-                        "system_count": ["system_count", "systemcount", "expected_count", "expectedcount", "expected", "system_qty", "qty", "system", "book_count", "bookcount", "8"],
-                        "actual_count": ["actual_count", "actualcount", "counted", "physical_count", "physicalcount", "count", "physical", "actual_qty", "actual", "9"],
-                        "customer": ["customer", "customer_name", "customername", "client", "client_name", "account", "10"],
-                        "notes": ["notes", "note", "comments", "comment", "remarks", "observation", "observations", "details", "11"]
-                    }
+                    rename_dict = {}
+                    for i, col in enumerate(import_df.columns):
+                        if i < len(standard_fields):
+                            rename_dict[col] = standard_fields[i]
                     
-                    # Check if columns might be numeric indices
-                    has_numeric_columns = any(col.isdigit() for col in import_df.columns if isinstance(col, str))
+                    import_df = import_df.rename(columns=rename_dict)
+                else:
+                    # Create a reverse lookup dictionary
+                    reverse_mapping = {}
+                    for standard_name, variants in column_mapping.items():
+                        for variant in variants:
+                            reverse_mapping[variant] = standard_name
                     
-                    # If first row might actually be data (numeric column names), try to fix it
-                    if has_numeric_columns or all(isinstance(col, int) or (isinstance(col, str) and col.isdigit()) for col in import_df.columns):
-                        st.warning("Your file appears to be missing headers. Attempting to infer column meanings...")
-                        
-                        # Reset the index to make the first row of data become column headers
-                        # First read the file again to get a fresh copy
-                        if uploaded_file.name.endswith('.csv'):
-                            import_df = pd.read_csv(uploaded_file, header=None)
-                        else:
-                            import_df = pd.read_excel(uploaded_file, header=None)
-                        
-                        # Map the numeric columns to standard names based on position
-                        standard_fields = ["item_id", "description", "lot_number", "expiration_date", 
-                                            "unit", "status", "lp", "location", 
-                                            "system_count", "actual_count", "customer", "notes"]
-                        
-                        rename_dict = {}
-                        for i, col in enumerate(import_df.columns):
-                            if i < len(standard_fields):
-                                rename_dict[col] = standard_fields[i]
-                        
-                        import_df = import_df.rename(columns=rename_dict)
-                    else:
-                        # Create a reverse lookup dictionary
-                        reverse_mapping = {}
-                        for standard_name, variants in column_mapping.items():
-                            for variant in variants:
-                                reverse_mapping[variant] = standard_name
-                        
-                        # Map columns in the imported dataframe to our standard names
-                        renamed_columns = {}
-                        found_columns = set()
-                        
-                        for col in import_df.columns:
-                            col_str = str(col).lower().strip()
-                            if col_str in reverse_mapping:
-                                standard_name = reverse_mapping[col_str]
-                                renamed_columns[col] = standard_name
-                                found_columns.add(standard_name)
-                        
-                        # Rename columns in dataframe
-                        import_df = import_df.rename(columns=renamed_columns)
+                    # Map columns in the imported dataframe to our standard names
+                    renamed_columns = {}
+                    found_columns = set()
                     
-                    # Check for and resolve duplicate columns
-                    if any(import_df.columns.duplicated()):
-                        duplicate_cols = import_df.columns[import_df.columns.duplicated()].tolist()
-                        st.warning(f"Found duplicate columns: {duplicate_cols}. Keeping only the first occurrence of each.")
-                        
-                        # Create a new DataFrame with deduplicated columns
-                        unique_columns = []
-                        for col in import_df.columns:
-                            if col not in unique_columns:
-                                unique_columns.append(col)
-                        
-                        # Select only the first occurrence of each column name
-                        import_df = import_df[unique_columns]
+                    for col in import_df.columns:
+                        col_str = str(col).lower().strip()
+                        if col_str in reverse_mapping:
+                            standard_name = reverse_mapping[col_str]
+                            renamed_columns[col] = standard_name
+                            found_columns.add(standard_name)
                     
-                    # Check required columns
-                    # TODO: FINALIZE WITH BRAYAN WHAT COLUMNS ARE REQUIRED
-                    required_cols = ["item_id", "system_count", "actual_count", "customer"]
-                    missing_cols = [col for col in required_cols if col not in import_df.columns]
+                    # Rename columns in dataframe
+                    import_df = import_df.rename(columns=renamed_columns)
+                
+                # Check for and resolve duplicate columns
+                if any(import_df.columns.duplicated()):
+                    duplicate_cols = import_df.columns[import_df.columns.duplicated()].tolist()
+                    st.warning(f"Found duplicate columns: {duplicate_cols}. Keeping only the first occurrence of each.")
                     
-                    if missing_cols:
-                        st.error(f"Missing required columns: {', '.join(missing_cols)}")
-                        st.write("Available columns: ", ", ".join([str(col) for col in import_df.columns]))
-                        st.write("Please ensure your file has columns that can be mapped to: item_id, description, system_count, actual_count, and customer")
-                    else:
-                        st.write("Preview of data to import:")
-                        st.dataframe(import_df.head(5))
-                        
-                    # Add missing standard columns if necessary
-                    # if "cycle_date" not in import_df.columns:
-                    #     import_df["cycle_date"] = date.today().isoformat()
-                    # if "notes" not in import_df.columns:
-                    #     import_df["notes"] = ""
-                    # for field in ["lot_number", "unit", "status", "lp", "location"]:
-                    #     if field not in import_df.columns:
-                    #         import_df[field] = ""
-                    # if "expiration_date" not in import_df.columns:
-                    #     import_df["expiration_date"] = None
-                    # Add better file preview to help diagnose issues
-                    st.write("### File Overview")
-                    st.write(f"Total rows: {len(import_df)}")
-                    st.write(f"Columns found: {', '.join(import_df.columns.tolist())}")
+                    # Create a new DataFrame with deduplicated columns
+                    unique_columns = []
+                    for col in import_df.columns:
+                        if col not in unique_columns:
+                            unique_columns.append(col)
                     
+                    # Select only the first occurrence of each column name
+                    import_df = import_df[unique_columns]
+                
+                # Check required columns
+                # TODO: FINALIZE WITH BRAYAN WHAT COLUMNS ARE REQUIRED
+                required_cols = ["item_id", "system_count", "actual_count", "customer"]
+                missing_cols = [col for col in required_cols if col not in import_df.columns]
+                
+                if missing_cols:
+                    st.error(f"Missing required columns: {', '.join(missing_cols)}")
+                    st.write("Available columns: ", ", ".join([str(col) for col in import_df.columns]))
+                    st.write("Please ensure your file has columns that can be mapped to: item_id, description, system_count, actual_count, and customer")
+                else:
+                    st.write("Preview of data to import:")
+                    st.dataframe(import_df.head(5))
                     
-                    # Calculate variance and percent_diff
-                    import_df["variance"] = import_df["actual_count"] - import_df["system_count"]
-                    import_df["percent_diff"] = import_df.apply(
-                        lambda row: (row["variance"] / row["system_count"]) * 100 
-                                    if row["system_count"] != 0 else 0, 
-                        axis=1
+                # Add missing standard columns if necessary
+                # if "cycle_date" not in import_df.columns:
+                #     import_df["cycle_date"] = date.today().isoformat()
+                # if "notes" not in import_df.columns:
+                #     import_df["notes"] = ""
+                # for field in ["lot_number", "unit", "status", "lp", "location"]:
+                #     if field not in import_df.columns:
+                #         import_df[field] = ""
+                # if "expiration_date" not in import_df.columns:
+                #     import_df["expiration_date"] = None
+                # Add better file preview to help diagnose issues
+                st.write("### File Overview")
+                st.write(f"Total rows: {len(import_df)}")
+                st.write(f"Columns found: {', '.join(import_df.columns.tolist())}")
+                
+                
+                # Calculate variance and percent_diff
+                import_df["variance"] = import_df["actual_count"] - import_df["system_count"]
+                import_df["percent_diff"] = import_df.apply(
+                    lambda row: (row["variance"] / row["system_count"]) * 100 
+                                if row["system_count"] != 0 else 0, 
+                    axis=1
+                )
+                
+                # Make sure expiration_date is handled specially since it can't be a default string
+                # TODO: THIS MIGHT CAUSING ISSUES
+                if "expiration_date" in import_df.columns:
+                    import_df["expiration_date"] = import_df["expiration_date"].apply(
+                        lambda x: None if pd.isna(x) else x
                     )
                     
-                    # Make sure expiration_date is handled specially since it can't be a default string
-                    # TODO: THIS MIGHT CAUSING ISSUES
-                    if "expiration_date" in import_df.columns:
-                        import_df["expiration_date"] = import_df["expiration_date"].apply(
-                            lambda x: None if pd.isna(x) else x
-                        )
-                    
-                    # Add required cycle count date selector
-                    st.write("### Select Cycle Count Date")
-                    cycle_count_date = st.date_input(
-                        "Cycle Count Date*", 
-                        value=date.today(),
-                        help="This date will be used for all records in this import"
+                # Add warehouse selection for imports
+                st.write("### Select Warehouse")
+                warehouse_id = None
+                if is_admin:
+                    # For admins, provide dropdown
+                    warehouses = db_client.get_all_warehouses()
+                    warehouse_options = {w['id']: w['name'] for w in warehouses}
+                    warehouse_id = st.selectbox(
+                        "Import Warehouse", 
+                        options=list(warehouse_options.keys()),
+                        format_func=lambda x: warehouse_options[x],
+                        help="Select the warehouse for these imported records"
                     )
+                else:
+                    # For managers, use their assigned warehouse
+                    warehouse_id = st.session_state.get("warehouse_id")
+                    if warehouse_id:
+                        warehouse = db_client.get_warehouse(warehouse_id)
+                        st.info(f"Importing to warehouse: {warehouse.get('name', 'Unknown')}")
+                    else:
+                        st.error("No warehouse assigned to your account")
+                
+                # Add required cycle count date selector
+                st.write("### Select Cycle Count Date")
+                cycle_count_date = st.date_input(
+                    "Cycle Count Date*", 
+                    value=date.today(),
+                    help="This date will be used for all records in this import"
+                )
 
-                    # Check for completely empty columns that might cause issues
-                    empty_cols = [col for col in import_df.columns if import_df[col].isna().all()]
+                # Check for completely empty columns that might cause issues
+                empty_cols = [col for col in import_df.columns if import_df[col].isna().all()]
 
-                    # Show more rows in preview to help diagnose issues
-                    with st.expander("Expanded data preview (10 rows)"):
-                        st.dataframe(import_df.head(10))
+                # Show more rows in preview to help diagnose issues
+                with st.expander("Expanded data preview (10 rows)"):
+                    st.dataframe(import_df.head(10))
 
-                    # Import button
-                    if st.button("Import Data"):
-                        # Validate cycle count date was selected
-                        if not cycle_count_date:
-                            st.error("Please select a cycle count date before importing")
-                        else:
-                            with st.spinner("Preparing to import..."):
-                                records = import_df.to_dict('records')
-                                total_records = len(records)
+                # Import button
+                if st.button("Import Data"):
+                    # Validate cycle count date was selected
+                    if not cycle_count_date:
+                        st.error("Please select a cycle count date before importing")
+                    else:
+                        with st.spinner("Preparing to import..."):
+                            records = import_df.to_dict('records')
+                            total_records = len(records)
+                            
+                            if total_records == 0:
+                                st.warning("No records found to import. Please check your file.")
+                            else:
+                                # Create a progress bar
+                                progress_bar = st.progress(0)
+                                status_text = st.empty()
                                 
-                                if total_records == 0:
-                                    st.warning("No records found to import. Please check your file.")
-                                else:
-                                    # Create a progress bar
-                                    progress_bar = st.progress(0)
-                                    status_text = st.empty()
-                                    
-                                    success_count = 0
-                                    error_count = 0
-                                    
-                                    # Process records with progress updates
-                                    for i, record in enumerate(records):
-                                        try:
-                                            # Update progress
-                                            progress = int((i / total_records) * 100)
-                                            progress_bar.progress(progress)
-                                            status_text.text(f"Processing: {i+1}/{total_records} records ({progress}%)")
-                                            
-                                            # Add required fields
-                                            record["id"] = str(uuid.uuid4())
-                                            record["uploaded_by"] = st.session_state.get("user_id")
-                                            record["uploaded_at"] = datetime.now().isoformat()
-                                            
-                                            # Override any existing cycle_date with the selected date
-                                            record["cycle_date"] = cycle_count_date.isoformat()
-                                            
-                                            # # Ensure numeric types are float and not NaN
-                                            # for field in ["system_count", "actual_count", "variance", "percent_diff"]:
-                                            #     if field in record:
-                                            #         try:
-                                            #             value = float(record[field])
-                                            #             record[field] = 0.0 if pd.isna(value) else value
-                                            #         except (ValueError, TypeError):
-                                            #             record[field] = 0.0
-                                            
-                                            # # Make sure string fields aren't NaN
-                                            # for field in ["item_id", "description", "lot_number", "unit", "status", "lp", "location", "customer", "notes"]:
-                                            #     if field in record and (isinstance(record[field], float) and pd.isna(record[field])):
-                                            #         record[field] = ""
-                                            
-                                            # Insert into database
-                                            db_client.insert_cycle_count(record)
-                                            success_count += 1
-                                        except Exception as e:
-                                            error_count += 1
-                                            st.error(f"Error importing record {i+1}: {str(e)}")
-                                    
-                                    # Complete the progress bar
-                                    progress_bar.progress(100)
-                                    status_text.text(f"Import complete: {success_count}/{total_records} records processed successfully")
-                                    
-                                    st.success(f"Import complete. {success_count} records imported successfully, {error_count} errors.")
-                except Exception as e:
-                    st.error(f"Error processing file: {str(e)}")
+                                success_count = 0
+                                error_count = 0
+                                
+                                # Process records with progress updates
+                                for i, record in enumerate(records):
+                                    try:
+                                        # Update progress
+                                        progress = int((i / total_records) * 100)
+                                        progress_bar.progress(progress)
+                                        status_text.text(f"Processing: {i+1}/{total_records} records ({progress}%)")
+                                        
+                                        # Add required fields
+                                        record["id"] = str(uuid.uuid4())
+                                        record["uploaded_by"] = st.session_state.get("user_id")
+                                        record["uploaded_at"] = datetime.now().isoformat()
+                                        record["warehouse_id"] = warehouse_id
+                                        
+                                        # Override any existing cycle_date with the selected date
+                                        record["cycle_date"] = cycle_count_date.isoformat()
+                                        
+                                        # Insert into database
+                                        db_client.insert_cycle_count(record)
+                                        success_count += 1
+                                    except Exception as e:
+                                        error_count += 1
+                                        st.error(f"Error importing record {i+1}: {str(e)}")
+                                
+                                # Complete the progress bar
+                                progress_bar.progress(100)
+                                status_text.text(f"Import complete: {success_count}/{total_records} records processed successfully")
+                                
+                                st.success(f"Import complete. {success_count} records imported successfully, {error_count} errors.")
+            except Exception as e:
+                st.error(f"Error processing file: {str(e)}")
     
     return False
