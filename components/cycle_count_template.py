@@ -1,7 +1,6 @@
 import io
 import pandas as pd
-
-
+    
 def create_import_template():
     """
     Create a template Excel file for data import
@@ -10,9 +9,24 @@ def create_import_template():
         BytesIO object containing Excel file
     """
     buffer = io.BytesIO()
-
+    
+    columns_name = [
+        "Customer",
+        "Item",
+        "Description",
+        "Lot number",
+        "Expiration date",
+        "Unit",
+        "Status",
+        "LP",
+        "Location",
+        "System count",
+        "Actual count",
+        "Notes"
+    ]
+    
     # Create DataFrame
-    df = pd.DataFrame()
+    df = pd.DataFrame(columns=columns_name)
     
     # Write to Excel
     with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
