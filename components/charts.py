@@ -120,8 +120,8 @@ def render_user_submission_chart(data):
     # Convert to DataFrame
     df = pd.DataFrame(data)
     
-    # Group by user and count submissions
-    counts_by_user = df.groupby("uploaded_by").size().reset_index(name="count")
+    # Group by user name and count submissions
+    counts_by_user = df.groupby("uploader_name").size().reset_index(name="count")
     counts_by_user.columns = ["user", "count"]
     
     # Create the chart
@@ -160,7 +160,7 @@ def render_dashboard_summary(data):
     items_last_week = len(df[df["uploaded_at"] >= last_week])
     items_last_month = len(df[df["uploaded_at"] >= last_month])
     
-    # Display metrics
+    # Display metrics only for
     col1, col2, col3 = st.columns(3)
     col1.metric("Total Items", total_items)
     col2.metric("Total Customers", total_customers)
