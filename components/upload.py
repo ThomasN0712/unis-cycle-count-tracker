@@ -7,6 +7,7 @@ import uuid
 import io  # For Excel export functionality
 import logging  # Add this import
 from components.authentication import check_admin_access
+from components.cycle_count_template import create_import_template
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -560,7 +561,7 @@ def render_upload_form():
                             # For displaying user information, you might need to join with users
                             # Instead of directly displaying uploaded_by, you might need:
                             user_name = "Unknown"
-                            user_id = row.get("uploaded_by")
+                            user_id = row.get("uploader_name")
                             if user_id:
                                 user = db_client.get_user_by_id(user_id)
                                 if user:
@@ -594,6 +595,17 @@ def render_upload_form():
     
     # Tab 3: Import/Export (available to all, but it's tab2 for non-admins)
     with tab3:
+        
+        st.write("### Download Template")
+        template_data = create_import_template()
+        st.download_button(
+            label="Download Template 📥",
+            data=template_data,
+            file_name="cycle_count_import_template.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            help="Download an Excel template with the correct column headers for importing data"
+        )
+    
         st.write("### Import Data")
         
         # Upload file
@@ -822,3 +834,4 @@ def render_upload_form():
                 st.error(f"Error processing file: {str(e)}")
     
     return False
+
