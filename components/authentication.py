@@ -42,26 +42,48 @@ def authenticate():
         submit = st.form_submit_button("Login")
     
     if submit:
+        # Add debug information
+        st.info(f"Attempting login for username: {username}")
+        
         # Query user from database
         db_client = SupabaseClient()
-        user = db_client.get_user(username)
         
-        if user:
-            # Implement proper password checking here
-            # For now, we'll use a simple comparison for the example
-            # In a real app, you'd use bcrypt.checkpw(password.encode(), hashed_password)            
-            # Simple validation - replace with proper password validation
-            if password == "123":  # Replace with actual validation
-                st.session_state["authentication_status"] = True
-                st.session_state["username"] = username
-                st.session_state["name"] = user.get("name", username)
-                st.session_state["user_id"] = user.get("id")
-                st.session_state["role"] = user.get("role")
-                st.session_state["warehouse_id"] = user.get("warehouse_id")
-                st.rerun()  # Force page refresh with new session state
+        # Check if Supabase client is initialized
+        if not db_client.supabase:
+            st.error("Database connection failed. Check Supabase configuration.")
+            return None, False, None
+        
+        # Get user
+        try:
+            user = db_client.get_user(username)
+            
+            if user:
+                st.info(f"User found: {username}")
+                
+                # Debug password check
+                st.info("Checking password...")
+                
+                # TODO: In production, replace with proper password verification
+                # Hard-coded password for demo/development
+                if password == "123":  # Replace with actual validation
+                    st.info("Password check successful")
+                    st.session_state["authentication_status"] = True
+                    st.session_state["username"] = username
+                    st.session_state["name"] = user.get("name", username)
+                    st.session_state["user_id"] = user.get("id")
+                    st.session_state["role"] = user.get("role")
+                    st.session_state["warehouse_id"] = user.get("warehouse_id")
+                    st.rerun()  # Force page refresh with new session state
+                else:
+                    st.error("Password check failed")
+                    st.session_state["authentication_status"] = False
             else:
+                st.error(f"User not found: {username}")
                 st.session_state["authentication_status"] = False
-        else:
+        except Exception as e:
+            st.error(f"Error during authentication: {str(e)}")
+            import traceback
+            st.code(traceback.format_exc())
             st.session_state["authentication_status"] = False
     
     if st.session_state["authentication_status"] == False:
@@ -92,7 +114,7 @@ def show_authentication_status():
         return False
     return True
 
-def logout():
+def logout(): 
     """Handle logout functionality"""
     # Clear all session state related to authentication
     st.session_state["authentication_status"] = None

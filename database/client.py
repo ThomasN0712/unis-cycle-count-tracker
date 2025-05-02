@@ -13,11 +13,40 @@ class SupabaseClient:
         if cls._instance is None:
             cls._instance = super(SupabaseClient, cls).__new__(cls)
             try:
+                # Add logging to check if secrets exist
+                if "supabase" not in st.secrets:
+                    st.error("Missing 'supabase' section in secrets")
+                    st.write("Available secret sections:", list(st.secrets.keys()))
+                    cls._instance.supabase = None
+                    return cls._instance
+                
+                # Check if URL and key exist
+                if "url" not in st.secrets["supabase"]:
+                    st.error("Missing 'url' in supabase secrets")
+                    cls._instance.supabase = None
+                    return cls._instance
+                
+                if "key" not in st.secrets["supabase"]:
+                    st.error("Missing 'key' in supabase secrets")
+                    cls._instance.supabase = None
+                    return cls._instance
+                
+                # Log connection attempt
+                st.write("Connecting to Supabase...")
                 supabase_url = st.secrets["supabase"]["url"]
                 supabase_key = st.secrets["supabase"]["key"]
+                
+                # Log partial URL (securely)
+                url_prefix = supabase_url[:15] if len(supabase_url) > 20 else "..."
+                st.write(f"URL begins with: {url_prefix}...")
+                
+                # Initialize client
                 cls._instance.supabase = create_client(supabase_url, supabase_key)
+                st.success("Supabase client initialized successfully")
             except Exception as e:
                 st.error(f"Error initializing Supabase client: {str(e)}")
+                import traceback
+                st.code(traceback.format_exc())
                 cls._instance.supabase = None
         return cls._instance
     
