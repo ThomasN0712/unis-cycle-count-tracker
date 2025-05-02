@@ -599,7 +599,7 @@ def render_upload_form():
         st.write("### Download Template")
         template_data = create_import_template()
         st.download_button(
-            label="Download Template 📥",
+            label="Download Template  📥",
             data=template_data,
             file_name="cycle_count_import_template.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

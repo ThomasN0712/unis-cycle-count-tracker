@@ -14,6 +14,7 @@ from components.charts import (
 from database.client import SupabaseClient
 import math
 from components.inventory_reconciliation import render_reconciliation_opportunities
+from components.tutorial import render_tutorial
 
 # Set page configuration
 st.set_page_config(
@@ -358,7 +359,7 @@ def main():
         is_admin = check_admin_access()
         
         # Create tabs for Data Management and Dashboard
-        dashboard_tab, upload_tab = st.tabs(["Dashboard", "Data Management"])
+        dashboard_tab, upload_tab, tutorial_tab = st.tabs(["Dashboard", "Data Management", "Tutorial"])
         
         with upload_tab:
             upload_success = render_upload_form()
@@ -368,6 +369,10 @@ def main():
         with dashboard_tab:
             st.title("Dashboard")
             render_dashboard()
+            
+        with tutorial_tab:
+            st.title("Tutorial")
+            render_tutorial()
             
     else:
         # NON-AUTHENTICATED USER CONTENT
