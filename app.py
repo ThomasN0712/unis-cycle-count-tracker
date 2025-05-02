@@ -12,6 +12,8 @@ from components.charts import (
     render_dashboard_summary
 )
 from database.client import SupabaseClient
+import math
+from components.inventory_reconciliation import render_reconciliation_opportunities
 
 # Set page configuration
 st.set_page_config(
@@ -78,9 +80,17 @@ def render_dashboard():
         warehouses_data = db_client.get_all_warehouses()
         warehouse_map = {w['id']: w['name'] for w in warehouses_data}
         
-        # Add warehouse name column if warehouse_id exists
+        # Get user data for lookups
+        users_data = db_client.get_all_users()
+        user_map = {u['id']: u['name'] for u in users_data}
+        
+        # Add warehouse name column based on warehouse_id
         if 'warehouse_id' in df.columns:
             df['warehouse'] = df['warehouse_id'].apply(lambda x: warehouse_map.get(x, "Unknown"))
+        
+        # Add user name column based on uploaded_by UUID
+        if 'uploaded_by' in df.columns:
+            df['uploader_name'] = df['uploaded_by'].apply(lambda x: user_map.get(x, "Unknown User"))
         
         # Apply role-based filtering
         is_admin = check_admin_access()
@@ -108,8 +118,9 @@ def render_dashboard():
         # Convert cycle_date from string to datetime
         df["cycle_date"] = pd.to_datetime(df["cycle_date"]).dt.date
         
-        # Display summary metrics
-        render_dashboard_summary(data)
+        # Display summary metrics for admins
+        if is_admin:
+            render_dashboard_summary(data)
         
         st.subheader("Filters")
         
@@ -120,8 +131,8 @@ def render_dashboard():
         customers = ["All"] + sorted(df["customer"].unique().tolist())
         
         if is_admin:
-            users = ["All"] + sorted(df["uploaded_by"].unique().tolist())
-            warehouses = ["All"]
+            users = ["All"] + sorted(df["uploader_name"].unique().tolist())
+            warehouses = ["All"] + sorted(df["warehouse"].unique().tolist())
 
         # Add filter widgets
         with col1:
@@ -142,6 +153,13 @@ def render_dashboard():
                 help="Filter by cycle date range"
             )
         
+        # Replace selectboxes with text inputs for partial matching
+        col5, col6 = st.columns(2)
+        with col5:
+            search_item = st.text_input("Search Items", "", help="Enter text to search for items")
+        with col6:
+            search_location = st.text_input("Search Locations", "", help="Enter text to search for locations")
+         
         # Apply filters
         filtered_df = df.copy()
         
@@ -149,7 +167,7 @@ def render_dashboard():
             filtered_df = filtered_df[filtered_df["customer"] == selected_customer]
             
         if is_admin and selected_user != "All":
-            filtered_df = filtered_df[filtered_df["uploaded_by"] == selected_user]
+            filtered_df = filtered_df[filtered_df["uploader_name"] == selected_user]
 
         if is_admin and selected_warehouse != "All" and 'warehouse' in filtered_df.columns:
             filtered_df = filtered_df[filtered_df["warehouse"] == selected_warehouse]
@@ -159,15 +177,29 @@ def render_dashboard():
                 (filtered_df["cycle_date"] >= date_range[0]) & 
                 (filtered_df["cycle_date"] <= date_range[1])
             ]
+            
+        # Apply partial match filters for item and location
+        if search_item:
+            filtered_df = filtered_df[filtered_df["item_id"].str.contains(search_item, case=False)]
+            
+        if search_location:
+            filtered_df = filtered_df[filtered_df["location"].str.contains(search_location, case=False)]
         
         # Show number of records after filtering
         st.info(f"Showing {len(filtered_df)} of {len(df)} records")
         
         # Download option
         if not filtered_df.empty:
+            # Before exporting, ensure warehouse names and user names are included
+            export_df = filtered_df.copy()
+            if 'warehouse_id' in export_df.columns and 'warehouse' not in export_df.columns:
+                export_df['warehouse'] = export_df['warehouse_id'].apply(lambda x: warehouse_map.get(x, "Unknown"))
+            if 'uploaded_by' in export_df.columns and 'uploader_name' not in export_df.columns:
+                export_df['uploader_name'] = export_df['uploaded_by'].apply(lambda x: user_map.get(x, "Unknown User"))
+            
             st.download_button(
                 label="Download Filtered Data",
-                data=filtered_df.to_csv(index=False).encode('utf-8'),
+                data=export_df.to_csv(index=False).encode('utf-8'),
                 file_name=f"cycle_count_data_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.csv",
                 mime="text/csv"
             )
@@ -189,12 +221,70 @@ def render_dashboard():
             if 'uploaded_at' in filtered_df.columns:
                 filtered_df['uploaded_at'] = pd.to_datetime(filtered_df['uploaded_at']).dt.strftime('%b %d, %Y %I:%M %p')
         
+        # Add warehouse to the displayed fields in dataframe
+        display_cols = ['item_id', 'description', 'location', 'warehouse', 'lp', 'lot_number', 'unit', 'status', 'system_count', 
+                       'actual_count', 'variance', 'customer', 'cycle_date', 'uploaded_at', 'uploader_name', 'notes', ]
+
         # Charts tab layout
-        tab1, tab2, tab3 = st.tabs(["Data", "Charts", "Top Variances"])
+        tab1, tab2, tab3, tab4 = st.tabs(["Data", "Charts", "Top Variances", "Reconciliation"])
         
         with tab1:
             st.subheader("Cycle Count Data")
-            st.dataframe(filtered_df)
+            
+            # Row count selector and pagination controls
+            col1, col2, col3, col4, col5 = st.columns([1, 6, 5, 3, 1])
+            
+            with col1:
+                rows_per_page = st.selectbox(
+                    "Rows per page:", 
+                    options=[50, 100, 300],
+                    index=0  # Default to 50
+                )
+            
+
+            n_pages = max(1, math.ceil(len(filtered_df) / rows_per_page))
+            
+            with col5:
+                page_number = st.number_input(
+                    "Page:", 
+                    min_value=1, 
+                    max_value=n_pages,
+                    step=1
+                )
+            
+            # Show page stats
+            with col3:
+                start_idx = 1 if len(filtered_df) > 0 else 0
+                end_idx = len(filtered_df) if rows_per_page == "All" else min(page_number * rows_per_page, len(filtered_df))
+                st.write(f"Showing {start_idx}-{end_idx} of {len(filtered_df)} records")
+            
+            # Slice the dataframe based on pagination
+            if rows_per_page != "All":
+                start = (page_number - 1) * rows_per_page
+                end = min(start + rows_per_page, len(filtered_df))
+                display_df = filtered_df.iloc[start:end]
+            else:
+                display_df = filtered_df
+            
+            # Forward/backward buttons
+            if n_pages > 1:
+                col1, col2 = st.columns(2)
+                if col1.button("← Previous", disabled=(page_number == 1)):
+                    # This will trigger a rerun with page_number-1
+                    st.session_state["page_number"] = max(1, page_number - 1)
+                    st.rerun()
+                    
+                if col2.button("Next →", disabled=(page_number == n_pages)):
+                    # This will trigger a rerun with page_number+1
+                    st.session_state["page_number"] = min(n_pages, page_number + 1)
+                    st.rerun()
+            
+            # Display the dataframe with width set to fit content
+            st.dataframe(
+                display_df[display_cols],
+                use_container_width=True,
+                height=min(600, 35 * len(display_df) + 38)  # Dynamic height based on row count
+            )
         
         with tab2:
             # Display charts
@@ -225,6 +315,10 @@ def render_dashboard():
             filtered_df["abs_variance"] = filtered_df["variance"].abs()
             top_items = filtered_df.sort_values("abs_variance", ascending=False).head(limit)
             st.dataframe(top_items[["item_id", "description", "customer", "location", "system_count", "actual_count", "variance", "percent_diff"]])
+        
+        with tab4:
+            st.subheader("Inventory Reconciliation")
+            render_reconciliation_opportunities(filtered_df)
     
     except Exception as e:
         st.error(f"Error loading dashboard: {str(e)}")

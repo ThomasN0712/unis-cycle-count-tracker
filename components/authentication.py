@@ -36,7 +36,7 @@ def authenticate():
     
     # Create login form
     with st.form("login_form"):
-        st.title("Cycle Count Tracker")
+        st.title("Login")
         username = st.text_input("Username")
         password = st.text_input("Password", type="password")
         submit = st.form_submit_button("Login")
