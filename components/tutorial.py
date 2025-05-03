@@ -8,7 +8,6 @@ def render_tutorial():
     user_role = st.session_state.get("role", "manager")
     
     # Common introduction
-    st.markdown("## Welcome to the Cycle Count Tracker Tutorial")
     st.write("This guide will help you learn how to use the application effectively.")
     
     # Determine if user is admin

@@ -333,7 +333,7 @@ def main():
     # Different display based on authentication status
     if st.session_state.get("authentication_status"):
         # AUTHENTICATED USER CONTENT
-        col1, col2, col3 = st.columns([6, 13, 1])
+        col1, col2, col3 = st.columns([6, 10, 1])
         with col1:
             welcome_msg = f'Welcome, **{st.session_state["name"]}**'
             
