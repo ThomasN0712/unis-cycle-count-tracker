@@ -9,7 +9,8 @@ from components.charts import (
     render_variance_histogram,
     render_top_variance_items,
     render_user_submission_chart,
-    render_dashboard_summary
+    render_admin_dashboard_summary,
+    render_manager_dashboard_summary
 )
 from database.client import SupabaseClient
 import math
@@ -96,21 +97,15 @@ def render_dashboard():
         # Apply role-based filtering
         is_admin = check_admin_access()
         if not is_admin:
-            # For managers, only show their own uploads or data from their warehouse
-            user_id = st.session_state.get("user_id")
+            # For managers, show data from their warehouse (not just their own uploads)
             warehouse_id = st.session_state.get("warehouse_id")
             
-            # Filter by user ID if that field exists
-            if 'uploaded_by' in df.columns:
-                df = df[df["uploaded_by"] == user_id]
-            
-            # Additional filter by warehouse for managers
+            # Filter by warehouse for managers
             if warehouse_id and 'warehouse_id' in df.columns:
                 df = df[df["warehouse_id"] == warehouse_id]
         else:
-            
             st.success("Admin view")
-            
+        
         # Continue with dashboard display as before
         if df.empty:
             st.warning("No data to display with current filters")
@@ -121,7 +116,9 @@ def render_dashboard():
         
         # Display summary metrics for admins
         if is_admin:
-            render_dashboard_summary(data)
+            render_admin_dashboard_summary(data)
+        else:
+            render_manager_dashboard_summary(data)
         
         st.subheader("Filters")
         
@@ -130,18 +127,33 @@ def render_dashboard():
         
         # Get unique values for filters
         customers = ["All"] + sorted(df["customer"].unique().tolist())
-        
+
+        # For managers, get all users in their warehouse
+        is_admin = check_admin_access()
         if is_admin:
             users = ["All"] + sorted(df["uploader_name"].unique().tolist())
             warehouses = ["All"] + sorted(df["warehouse"].unique().tolist())
+        else:
+            # Get manager's warehouse ID
+            warehouse_id = st.session_state.get("warehouse_id")
+            
+            # Get all users in this warehouse
+            warehouse_users = db_client.get_warehouse_users(warehouse_id)
+            
+            # Map user IDs to names
+            warehouse_user_ids = [u["id"] for u in warehouse_users]
+            
+            # Filter df to only include users from this warehouse
+            warehouse_df = df[df["uploaded_by"].isin(warehouse_user_ids)]
+            users = ["All"] + sorted(warehouse_df["uploader_name"].unique().tolist())
 
         # Add filter widgets
         with col1:
             selected_customer = st.selectbox("Customer", customers)
         
         with col2:
-            if is_admin:
-                selected_user = st.selectbox("Uploaded By", users)
+            # Allow warehouse users filter for both admins and managers
+            selected_user = st.selectbox("Uploaded By", users)
                 
         with col3:
             if is_admin:
@@ -167,7 +179,7 @@ def render_dashboard():
         if selected_customer != "All":
             filtered_df = filtered_df[filtered_df["customer"] == selected_customer]
             
-        if is_admin and selected_user != "All":
+        if selected_user != "All":
             filtered_df = filtered_df[filtered_df["uploader_name"] == selected_user]
 
         if is_admin and selected_warehouse != "All" and 'warehouse' in filtered_df.columns:

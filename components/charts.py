@@ -131,7 +131,7 @@ def render_user_submission_chart(data):
     
     st.plotly_chart(fig, use_container_width=True)
 
-def render_dashboard_summary(data):
+def render_admin_dashboard_summary(data):
     """
     Render summary metrics for the dashboard
     
@@ -161,6 +161,54 @@ def render_dashboard_summary(data):
     items_last_month = len(df[df["uploaded_at"] >= last_month])
     
     # Display metrics only for
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Total Items", total_items)
+    col2.metric("Total Customers", total_customers)
+    col3.metric("Total Users", total_users)
+    
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Items Last Week", items_last_week)
+    col2.metric("Items Last Month", items_last_month)
+
+def render_manager_dashboard_summary(data):
+    """
+    Render summary metrics for the dashboard
+    
+    Args:
+        data (list): List of cycle count records
+    """
+    if not data:
+        st.info("No data available to display")
+        return
+    
+    # Convert to DataFrame
+    df = pd.DataFrame(data)
+    
+    # Filter by warehouse_id if it exists in both dataframe and session state
+    warehouse_id = st.session_state.get("warehouse_id")
+    if warehouse_id and "warehouse_id" in df.columns:
+        df = df[df["warehouse_id"] == warehouse_id]
+    
+    # Calculate metrics
+    total_items = len(df)
+    total_customers = df["customer"].nunique() if "customer" in df.columns else 0
+    total_users = df["uploaded_by"].nunique() if "uploaded_by" in df.columns else 0   
+    
+    # Create date ranges
+    now = datetime.now()
+    if "uploaded_at" in df.columns:
+        df["uploaded_at"] = pd.to_datetime(df["uploaded_at"])
+        last_week = now - timedelta(days=7)
+        last_month = now - timedelta(days=30)
+        
+        # Filter by date ranges
+        items_last_week = len(df[df["uploaded_at"] >= last_week])
+        items_last_month = len(df[df["uploaded_at"] >= last_month])
+    else:
+        items_last_week = 0
+        items_last_month = 0
+    
+    # Display metrics
     col1, col2, col3 = st.columns(3)
     col1.metric("Total Items", total_items)
     col2.metric("Total Customers", total_customers)
