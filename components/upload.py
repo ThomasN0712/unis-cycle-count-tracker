@@ -614,14 +614,17 @@ def render_upload_form():
         
         if uploaded_file is not None:
             try:
-                # Process uploaded file - properly use the first row as headers
+                # Process uploaded file
                 if uploaded_file.name.endswith('.csv'):
-                    import_df = pd.read_csv(uploaded_file)  # Remove header=None
+                    import_df = pd.read_csv(uploaded_file)
                 else:
-                    import_df = pd.read_excel(uploaded_file)  # Remove header=None
+                    import_df = pd.read_excel(uploaded_file)
                 
-                # Convert all column names to lowercase - handle both string and non-string columns
-                import_df.columns = [str(col).lower().strip() if isinstance(col, str) else str(col) for col in import_df.columns]
+                # Skip empty rows immediately
+                import_df = import_df.dropna(how='all')
+                
+                # Convert all column names to lowercase, strip whitespace and replace spaces with underscores
+                import_df.columns = [str(col).lower().strip().replace(' ', '_') for col in import_df.columns]
                 
                 # Column name mapping dictionary - maps various possible names to our standard fields
                 column_mapping = {
@@ -727,7 +730,17 @@ def render_upload_form():
                 st.write("### File Overview")
                 st.write(f"Total rows: {len(import_df)}")
                 st.write(f"Columns found: {', '.join(import_df.columns.tolist())}")
+            
                 
+                # Also add a check for empty rows before trying to process
+                if len(import_df) == 0:
+                    st.error("No data found in file after removing empty rows.")
+                    return
+                    
+                # Add a size limit for safety
+                if len(import_df) > 5000:
+                    st.warning(f"File contains {len(import_df)} rows. Processing only the first 5000 rows.")
+                    import_df = import_df.head(5000)
                 
                 # Calculate variance and percent_diff
                 import_df["variance"] = import_df["actual_count"] - import_df["system_count"]
@@ -774,12 +787,12 @@ def render_upload_form():
                     help="This date will be used for all records in this import"
                 )
 
-                # Check for completely empty columns that might cause issues
-                empty_cols = [col for col in import_df.columns if import_df[col].isna().all()]
-
-                # Show more rows in preview to help diagnose issues
-                with st.expander("Expanded data preview (10 rows)"):
-                    st.dataframe(import_df.head(10))
+                # Function to replace NaN with None in a dictionary
+                def clean_nans(d):
+                    for k, v in d.items():
+                        if isinstance(v, float) and np.isnan(v):
+                            d[k] = None
+                    return d
 
                 # Import button
                 if st.button("Import Data"):
@@ -788,8 +801,11 @@ def render_upload_form():
                         st.error("Please select a cycle count date before importing")
                     else:
                         with st.spinner("Preparing to import..."):
+                            # Convert DataFrame to records and clean NaN values
                             records = import_df.to_dict('records')
-                            total_records = len(records)
+                            cleaned_records = [clean_nans(record) for record in records]
+                            
+                            total_records = len(cleaned_records)
                             
                             if total_records == 0:
                                 st.warning("No records found to import. Please check your file.")
@@ -802,7 +818,7 @@ def render_upload_form():
                                 error_count = 0
                                 
                                 # Process records with progress updates
-                                for i, record in enumerate(records):
+                                for i, record in enumerate(cleaned_records):
                                     try:
                                         # Update progress
                                         progress = int((i / total_records) * 100)
@@ -818,12 +834,15 @@ def render_upload_form():
                                         # Override any existing cycle_date with the selected date
                                         record["cycle_date"] = cycle_count_date.isoformat()
                                         
+                                        
                                         # Insert into database
                                         db_client.insert_cycle_count(record)
                                         success_count += 1
                                     except Exception as e:
                                         error_count += 1
                                         st.error(f"Error importing record {i+1}: {str(e)}")
+                                        # Show problematic record
+                                        st.write(f"Problem record: {record}")
                                 
                                 # Complete the progress bar
                                 progress_bar.progress(100)
