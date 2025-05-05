@@ -15,36 +15,28 @@ class SupabaseClient:
             try:
                 # Add logging to check if secrets exist
                 if "supabase" not in st.secrets:
-                    st.error("Missing 'supabase' section in secrets")
-                    st.write("Available secret sections:", list(st.secrets.keys()))
                     cls._instance.supabase = None
                     return cls._instance
                 
                 # Check if URL and key exist
                 if "url" not in st.secrets["supabase"]:
-                    st.error("Missing 'url' in supabase secrets")
                     cls._instance.supabase = None
                     return cls._instance
                 
                 if "key" not in st.secrets["supabase"]:
-                    st.error("Missing 'key' in supabase secrets")
                     cls._instance.supabase = None
                     return cls._instance
                 
                 # Log connection attempt
-                st.write("Connecting to Supabase...")
                 supabase_url = st.secrets["supabase"]["url"]
                 supabase_key = st.secrets["supabase"]["key"]
                 
                 # Log partial URL (securely)
                 url_prefix = supabase_url[:15] if len(supabase_url) > 20 else "..."
-                st.write(f"URL begins with: {url_prefix}...")
                 
                 # Initialize client
                 cls._instance.supabase = create_client(supabase_url, supabase_key)
-                st.success("Supabase client initialized successfully")
             except Exception as e:
-                st.error(f"Error initializing Supabase client: {str(e)}")
                 import traceback
                 st.code(traceback.format_exc())
                 cls._instance.supabase = None
@@ -72,7 +64,6 @@ class SupabaseClient:
                 return response.data[0]
             return None
         except Exception as e:
-            st.error(f"Error inserting data: {str(e)}")
             raise
     
     def get_all_cycle_counts(self):
@@ -333,3 +324,53 @@ class SupabaseClient:
         except Exception as e:
             st.error(f"Error fetching warehouse users: {str(e)}")
             return []
+
+    def register_user(self, data):
+        """
+        Register a new user
+        
+        Args:
+            data (dict): Dictionary containing user data
+        
+        Returns:
+            dict: The created user record, or None on error
+        """
+        if not self.supabase:
+            st.error("Supabase client not initialized")
+            return None
+        
+        try:
+            response = self.supabase.table(USERS_TABLE).insert(data).execute()
+            
+            if hasattr(response, 'data') and response.data:
+                return response.data[0]
+            return None
+        except Exception as e:
+            st.error(f"Error registering user: {str(e)}")
+            return None
+
+    def update_last_login(self, user_id):
+        """
+        Update the last login timestamp for a user
+        
+        Args:
+            user_id (str): The ID of the user
+        
+        Returns:
+            bool: True if updated successfully, False otherwise
+        """
+        if not self.supabase:
+            return False
+        
+        try:
+            import datetime
+            now = datetime.datetime.now().isoformat()
+            
+            response = self.supabase.table(USERS_TABLE).update(
+                {"last_login": now}
+            ).eq("id", user_id).execute()
+            
+            return hasattr(response, 'data') and len(response.data) > 0
+        except Exception as e:
+            st.error(f"Error updating last login: {str(e)}")
+            return False

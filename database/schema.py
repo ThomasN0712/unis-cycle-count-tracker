@@ -71,7 +71,9 @@ CREATE TABLE IF NOT EXISTS users (
     name TEXT NOT NULL,
     role TEXT NOT NULL CHECK (role IN ('admin', 'manager')),
     warehouse_id INTEGER REFERENCES warehouses(id),
-    created_at TIMESTAMP DEFAULT NOW()
+    created_at TIMESTAMP DEFAULT NOW(),
+    password_hash TEXT NOT NULL,
+    last_login TIMESTAMP
 );
 """
 
@@ -136,5 +138,7 @@ USERS_COLUMNS = {
     "name": "name",
     "role": "role",
     "warehouse_id": "warehouse_id",
-    "created_at": "created_at"
+    "created_at": "created_at",
+    "password_hash": "password_hash",
+    "last_login": "last_login"
 }
