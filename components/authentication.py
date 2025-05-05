@@ -1,6 +1,7 @@
 import streamlit as st
 from database.client import SupabaseClient
 import bcrypt
+from components.registration import render_registration_form
 
 def authenticate():
     """
@@ -25,6 +26,8 @@ def authenticate():
         st.session_state["role"] = None
     if "warehouse_id" not in st.session_state:
         st.session_state["warehouse_id"] = None
+    if "show_registration" not in st.session_state:
+        st.session_state["show_registration"] = False
     
     # If already authenticated, return current state
     if st.session_state["authentication_status"]:
@@ -34,60 +37,92 @@ def authenticate():
             st.session_state["username"]
         )
     
-    # Create login form
-    with st.form("login_form"):
-        st.title("Login")
-        username = st.text_input("Username")
-        password = st.text_input("Password", type="password")
-        submit = st.form_submit_button("Login")
-    
-    if submit:
-        # Add debug information
-        st.info(f"Attempting login for username: {username}")
+    # Toggle between login and registration
+    if st.session_state.get("show_registration"):
+        # Render registration form
+        registration_successful = render_registration_form()
         
-        # Query user from database
-        db_client = SupabaseClient()
+        if registration_successful:
+            # Switch back to login after successful registration
+            st.session_state["show_registration"] = False
+            st.rerun()
         
-        # Check if Supabase client is initialized
-        if not db_client.supabase:
-            st.error("Database connection failed. Check Supabase configuration.")
-            return None, False, None
+        # Option to go back to login
+        if st.button("← Back to Login"):
+            st.session_state["show_registration"] = False
+            st.rerun()
+    else:
+        # Create login form
+        with st.form("login_form"):
+            st.title("Login")
+            username = st.text_input("Username")
+            password = st.text_input("Password", type="password")
+            submit = st.form_submit_button("Login")
         
-        # Get user
-        try:
-            user = db_client.get_user(username)
+        if submit:
+            # Query user from database
+            db_client = SupabaseClient()
             
-            if user:
-                st.info(f"User found: {username}")
+            # Check if Supabase client is initialized
+            if not db_client.supabase:
+                st.error("Database connection failed. Check Supabase configuration.")
+                return None, False, None
+            
+            # Get user
+            try:
+                user = db_client.get_user(username)
                 
-                # Debug password check
-                st.info("Checking password...")
-                
-                # TODO: In production, replace with proper password verification
-                # Hard-coded password for demo/development
-                if password == "123":  # Replace with actual validation
-                    st.info("Password check successful")
-                    st.session_state["authentication_status"] = True
-                    st.session_state["username"] = username
-                    st.session_state["name"] = user.get("name", username)
-                    st.session_state["user_id"] = user.get("id")
-                    st.session_state["role"] = user.get("role")
-                    st.session_state["warehouse_id"] = user.get("warehouse_id")
-                    st.rerun()  # Force page refresh with new session state
+                if user:
+                    # Get password hash from user record
+                    stored_hash = user.get("password_hash")
+                    
+                    # For backward compatibility during development
+                    if stored_hash is None:
+                        # Temporary: use simple password check if no hash exists
+                        if password == "123":
+                            st.session_state["authentication_status"] = True
+                            st.session_state["username"] = username
+                            st.session_state["name"] = user.get("name", username)
+                            st.session_state["user_id"] = user.get("id")
+                            st.session_state["role"] = user.get("role")
+                            st.session_state["warehouse_id"] = user.get("warehouse_id")
+                            
+                            # Update last login time
+                            db_client.update_last_login(user.get("id"))
+                            
+                            st.rerun()
+                    else:
+                        # Verify password using bcrypt
+                        if bcrypt.checkpw(password.encode('utf-8'), stored_hash.encode('utf-8')):
+                            st.session_state["authentication_status"] = True
+                            st.session_state["username"] = username
+                            st.session_state["name"] = user.get("name", username)
+                            st.session_state["user_id"] = user.get("id")
+                            st.session_state["role"] = user.get("role")
+                            st.session_state["warehouse_id"] = user.get("warehouse_id")
+                            
+                            # Update last login time
+                            db_client.update_last_login(user.get("id"))
+                            
+                            st.rerun()
+                        else:
+                            st.session_state["authentication_status"] = False
                 else:
-                    st.error("Password check failed")
                     st.session_state["authentication_status"] = False
-            else:
-                st.error(f"User not found: {username}")
+            except Exception as e:
+                st.error(f"Error during authentication: {str(e)}")
+                import traceback
+                st.code(traceback.format_exc())
                 st.session_state["authentication_status"] = False
-        except Exception as e:
-            st.error(f"Error during authentication: {str(e)}")
-            import traceback
-            st.code(traceback.format_exc())
-            st.session_state["authentication_status"] = False
-    
-    if st.session_state["authentication_status"] == False:
-        st.error("Username/password is incorrect")
+        
+        if st.session_state["authentication_status"] == False:
+            st.error("Username/password is incorrect")
+        
+        # Add registration option
+        st.write("Don't have an account?")
+        if st.button("Register New Account"):
+            st.session_state["show_registration"] = True
+            st.rerun()
     
     return (
         st.session_state.get("name"),
