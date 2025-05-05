@@ -182,7 +182,7 @@ def render_tutorial():
         2. It suggests matches where items can be moved to resolve variances
         3. You can export a consolidated plan for physical inventory transfers
         
-        Look back period: How many days back the system should check for possible matches between overages and shortages.
+        **Look back period:** How many days back the system should check for possible matches between overages and shortages.
         """)
 
         st.markdown("#### Using the Reconciliation Tool")
