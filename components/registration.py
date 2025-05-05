@@ -19,7 +19,7 @@ def render_registration_form():
     warehouse_options = [(w["id"], w["name"]) for w in warehouses]
     
     # Invitation code (stored in secrets for security)
-    invitation_code = st.secrets.get("app_settings", {}).get("invitation_code", "UNIS2023CYCLE")
+    invitation_code = st.secrets.get("app_settings", {}).get("invitation_code", "UNIS2025CYCLE")
     
     with st.form("registration_form"):
         username = st.text_input("Username (will be used for login)")
