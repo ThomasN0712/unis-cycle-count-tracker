@@ -307,17 +307,20 @@ class SupabaseClient:
     def get_warehouse_users(self, warehouse_id):
         """
         Get all users assigned to a specific warehouse
+        
         Args:
             warehouse_id (int): The ID of the warehouse to retrieve users for
-
+            
         Returns:
             list: List of users assigned to the warehouse
         """
         if not self.supabase:
+            st.error("Supabase client not initialized")
             return []
         
         try:
             response = self.supabase.table(USERS_TABLE).select("*").eq("warehouse_id", warehouse_id).execute()
+            
             if hasattr(response, 'data'):
                 return response.data
             return []

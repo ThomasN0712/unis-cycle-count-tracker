@@ -16,21 +16,37 @@ def find_reconciliation_opportunities(df, max_days=7):
     Returns:
         DataFrame with reconciliation opportunities
     """
+    # Check if dataframe is empty first
+    if df.empty:
+        return pd.DataFrame()  # Return empty dataframe if input is empty
+    
     # Make a copy of dataframe to avoid modifying the original
     working_df = df.copy()
     
     # Ensure cycle_date is in datetime format
     if 'cycle_date' in working_df.columns:
-        # Convert from string format if necessary
-        if isinstance(working_df['cycle_date'].iloc[0], str):
-            working_df['cycle_date'] = pd.to_datetime(working_df['cycle_date'])
+        # Check if there's data in the dataframe before accessing it
+        if len(working_df) > 0:  # This checks if the dataframe has any rows
+            # Convert from string format if necessary
+            first_value = working_df['cycle_date'].iloc[0]
+            if isinstance(first_value, str):
+                working_df['cycle_date'] = pd.to_datetime(working_df['cycle_date'])
+        else:
+            return pd.DataFrame()  # Return empty dataframe if no data
+    else:
+        # If no cycle_date column, can't perform date filtering
+        return pd.DataFrame()
     
     # Filter data to only include the last N days
     today = datetime.now().date()
     cutoff_date = today - timedelta(days=max_days)
     
-    # Use datetime comparison
-    recent_df = working_df[pd.to_datetime(working_df['cycle_date']).dt.date >= cutoff_date].copy()
+    # Use datetime comparison - safely handle conversion
+    try:
+        recent_df = working_df[pd.to_datetime(working_df['cycle_date']).dt.date >= cutoff_date].copy()
+    except:
+        # If there's an error in date conversion, return empty frame
+        return pd.DataFrame()
     
     if recent_df.empty:
         return pd.DataFrame()
@@ -360,6 +376,27 @@ def render_reconciliation_opportunities(df):
     Args:
         df: DataFrame containing all cycle count data
     """
+    # First check if dataframe is empty or very small
+    if df is None or df.empty or len(df) < 2:
+        st.info("No data available for reconciliation analysis.")
+        return
+        
+    # Ensure we're working with a clean dataset
+    working_df = df.copy()
+    
+    # Drop rows with missing essential data
+    required_cols = ['item_id', 'location', 'variance']
+    for col in required_cols:
+        if col not in working_df.columns:
+            st.error(f"Required column '{col}' missing from data.")
+            return
+    
+    working_df = working_df.dropna(subset=required_cols)
+    
+    if working_df.empty:
+        st.info("No valid data available after filtering out incomplete records.")
+        return
+    
     # Add introduction and instructions
     st.warning("This tool is still in development and may not work as expected.")
     st.write("""
@@ -377,7 +414,7 @@ def render_reconciliation_opportunities(df):
     max_days = st.slider("Look back period (days)", min_value=1, max_value=30, value=7)
     
     # Find opportunities
-    opportunities = find_reconciliation_opportunities(df, max_days=max_days)
+    opportunities = find_reconciliation_opportunities(working_df, max_days=max_days)
     
     if opportunities.empty:
         st.info(f"No reconciliation opportunities found in the last {max_days} days.")
