@@ -368,18 +368,13 @@ def render_reconciliation_opportunities(df):
     
     **How it works:**
     1. Select a look-back period (default: 7 days)
-    2. Set a minimum benefit threshold to focus on significant opportunities
-    3. Review the suggested matches below - each match shows where items are missing and where extras exist
-    4. Use this information to relocate inventory and resolve variances
-    5. Export all opportunities to Excel for further planning
+    2. Review the suggested matches below - each match shows where items are missing and where extras exist
+    3. Use this information to relocate inventory and resolve variances
+    4. Export all opportunities to Excel for further planning
     """)
     
     # Filter settings
-    col1, col2 = st.columns(2)
-    with col1:
-        max_days = st.slider("Look back period (days)", min_value=1, max_value=30, value=7)
-    with col2:
-        min_benefit = st.number_input("Minimum benefit threshold", min_value=1, value=5)
+    max_days = st.slider("Look back period (days)", min_value=1, max_value=30, value=7)
     
     # Find opportunities
     opportunities = find_reconciliation_opportunities(df, max_days=max_days)
@@ -388,19 +383,16 @@ def render_reconciliation_opportunities(df):
         st.info(f"No reconciliation opportunities found in the last {max_days} days.")
         return
     
-    # Apply minimum benefit filter
-    filtered_opps = opportunities[opportunities['potential_benefit'] >= min_benefit]
-    
-    if filtered_opps.empty:
-        st.info(f"No reconciliation opportunities with benefit ≥ {min_benefit} found.")
+    if opportunities.empty:
+        st.info(f"No reconciliation opportunities found.")
         return
     
     # Show summary
-    st.success(f"Found {len(filtered_opps)} reconciliation opportunities. " 
-              f"Total potential variance reduction: {filtered_opps['potential_benefit'].sum():.0f} units")
+    st.success(f"Found {len(opportunities)} reconciliation opportunities. " 
+              f"Total potential variance reduction: {opportunities['potential_benefit'].sum():.0f} units")
     
     # Display opportunities
-    for idx, opp in filtered_opps.iterrows():
+    for idx, opp in opportunities.iterrows():
         with st.expander(f"{opp['item_id']} - {opp['description']} (Benefit: {opp['potential_benefit']:.0f} {opp['unit']})"):
             col1, col2 = st.columns(2)
             
@@ -434,11 +426,11 @@ def render_reconciliation_opportunities(df):
                     f"Net After Reconciliation: {opp['net_variance']:.0f}")
     
     # Add consolidated export button at the bottom
-    if not filtered_opps.empty:
+    if not opportunities.empty:
         st.markdown("---")
         st.subheader("Print Report")
         
-        excel_data = create_consolidated_excel_report(filtered_opps)
+        excel_data = create_consolidated_excel_report(opportunities)
         file_name = f"reconciliation_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
         
         st.download_button(

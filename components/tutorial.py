@@ -181,14 +181,15 @@ def render_tutorial():
         1. The system identifies items with both overages and shortages across different locations
         2. It suggests matches where items can be moved to resolve variances
         3. You can export a consolidated plan for physical inventory transfers
+        
+        Look back period: How many days back the system should check for possible matches between overages and shortages.
         """)
 
         st.markdown("#### Using the Reconciliation Tool")
         st.markdown("""
         1. Go to the **Reconciliation** tab in the dashboard
         2. Adjust the **Look Back Period** to control how far back to search
-        3. Set the **Minimum Benefit Threshold** to focus on significant opportunities
-        4. Review the suggested matches and export as needed
+        3. Review the suggested matches and export as needed
         """)
         
         st.markdown("---")
