@@ -66,9 +66,13 @@ class SupabaseClient:
         except Exception as e:
             raise
     
-    def get_all_cycle_counts(self):
+    def get_all_cycle_counts(self, limit=None, offset=0):
         """
-        Get all cycle count records
+        Get all cycle count records with pagination support
+        
+        Args:
+            limit (int, optional): Maximum number of records to return, None for no limit
+            offset (int): Number of records to skip
         
         Returns:
             list: List of cycle count records
@@ -78,15 +82,44 @@ class SupabaseClient:
             return []
             
         try:
-            # Temporarily use simple select without joins until schema is updated
-            response = self.supabase.table(CYCLE_COUNTS_TABLE).select("*").execute()
+            # Start with a base query
+            query = self.supabase.table(CYCLE_COUNTS_TABLE).select("*")
             
-            if hasattr(response, 'data'):
-                return response.data
-            return []
+            # For large datasets, we'll need to fetch in batches
+            result_data = []
+            
+            if limit is None:
+                # If no limit specified, use pagination to get all records
+                page_size = 1000  # Supabase has a max limit of 1000
+                current_offset = offset
+                total_count = self.count_cycle_counts()
+                
+                # Continue fetching until we have all records
+                while len(result_data) < total_count:
+                    # Use range to specify pagination
+                    response = query.range(current_offset, current_offset + page_size - 1).execute()
+                    
+                    if not hasattr(response, 'data') or not response.data:
+                        break  # No more data
+                    
+                    batch_size = len(response.data)
+                    result_data.extend(response.data)
+                    
+                    if batch_size < page_size:
+                        break  # Less than a full page means we're at the end
+                    
+                    current_offset += batch_size  # Move to next batch
+                
+                return result_data
+            else:
+                # If limit is specified, just get that batch
+                response = query.range(offset, offset + limit - 1).execute()
+                if hasattr(response, 'data'):
+                    return response.data
+                return []
         except Exception as e:
             st.error(f"Error fetching data: {str(e)}")
-            raise
+            return []
     
     def filter_cycle_counts(self, customer=None, date_from=None, date_to=None, warehouse_id=None):
         """
@@ -377,3 +410,50 @@ class SupabaseClient:
         except Exception as e:
             st.error(f"Error updating last login: {str(e)}")
             return False
+
+    def count_cycle_counts(self, customer=None, date_from=None, date_to=None, warehouse_id=None):
+        """
+        Get the total count of cycle count records, optionally filtered
+        
+        Args:
+            customer (str, optional): Customer name to filter by
+            date_from (date, optional): Start date for filtering
+            date_to (date, optional): End date for filtering
+            warehouse_id (str, optional): Warehouse ID to filter by
+            
+        Returns:
+            int: Total count of records matching criteria
+        """
+        if not self.supabase:
+            st.error("Supabase client not initialized")
+            return 0
+        
+        try:
+            # Start with query that only returns count limit 100000
+            query = self.supabase.table(CYCLE_COUNTS_TABLE).select('count', count='exact')
+            
+            # Apply the same filters as in filter_cycle_counts
+            if customer:
+                query = query.eq(CYCLE_COUNTS_COLUMNS["customer"], customer)
+                
+            if date_from and date_to:
+                query = query.gte(CYCLE_COUNTS_COLUMNS["cycle_date"], date_from.isoformat())
+                query = query.lte(CYCLE_COUNTS_COLUMNS["cycle_date"], date_to.isoformat())
+            elif date_from:
+                query = query.gte(CYCLE_COUNTS_COLUMNS["cycle_date"], date_from.isoformat())
+            elif date_to:
+                query = query.lte(CYCLE_COUNTS_COLUMNS["cycle_date"], date_to.isoformat())
+                
+            if warehouse_id and 'location' in CYCLE_COUNTS_COLUMNS:
+                query = query.eq('location', warehouse_id)
+            
+            # Execute the count query
+            response = query.execute()
+            
+            # The count is in response.count
+            if hasattr(response, 'count'):
+                return response.count
+            return 0
+        except Exception as e:
+            st.error(f"Error counting data: {str(e)}")
+            return 0

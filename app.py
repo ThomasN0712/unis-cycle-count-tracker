@@ -69,14 +69,23 @@ def render_dashboard():
     try:
         # Get data from database
         db_client = SupabaseClient()
-        data = db_client.get_all_cycle_counts()
         
-        if not data:
+        # Get the count
+        total_count = db_client.count_cycle_counts()
+        
+        if total_count == 0:
             st.info("No data available in the database")
             return
         
+        # Fetch ALL data in batches
+        data = db_client.get_all_cycle_counts(limit=None)
+        
         # Convert to DataFrame
         df = pd.DataFrame(data)
+        
+        # Get pagination parameters for display only (not for fetching)
+        rows_per_page = st.session_state.get("rows_per_page", 100)
+        page_number = st.session_state.get("page_number", 1)
         
         # Get warehouse data for lookups
         warehouses_data = db_client.get_all_warehouses()
@@ -217,23 +226,16 @@ def render_dashboard():
                 mime="text/csv"
             )
         
-        # Format display
-        if not filtered_df.empty:
-            # Exclude ID column
-            if 'id' in filtered_df.columns:
-                filtered_df = filtered_df.drop(columns=['id'])
-            
-            # Capitalize customer names
-            if 'customer' in filtered_df.columns:
-                filtered_df['customer'] = filtered_df['customer'].str.upper()
-            
-            # Format date/time columns
-            if 'cycle_date' in filtered_df.columns:
-                filtered_df['cycle_date'] = pd.to_datetime(filtered_df['cycle_date']).dt.strftime('%b %d, %Y')
-            
-            if 'uploaded_at' in filtered_df.columns:
-                filtered_df['uploaded_at'] = pd.to_datetime(filtered_df['uploaded_at']).dt.strftime('%b %d, %Y %I:%M %p')
-        
+        # Make a copy for display formatting
+        display_filtered_df = filtered_df.copy()
+
+        # Format date/time columns for display only
+        if 'cycle_date' in display_filtered_df.columns:
+            display_filtered_df['cycle_date'] = pd.to_datetime(display_filtered_df['cycle_date']).dt.strftime('%b %d, %Y')
+
+        if 'uploaded_at' in display_filtered_df.columns:
+            display_filtered_df['uploaded_at'] = pd.to_datetime(display_filtered_df['uploaded_at']).dt.strftime('%b %d, %Y %I:%M %p')
+
         # Add warehouse to the displayed fields in dataframe
         display_cols = ['item_id', 'description', 'location', 'warehouse', 'lp', 'lot_number', 'unit', 'status', 'system_count', 
                        'actual_count', 'variance', 'customer', 'cycle_date', 'uploaded_at', 'uploader_name', 'notes', ]
@@ -244,59 +246,62 @@ def render_dashboard():
         with tab1:
             st.subheader("Cycle Count Data")
             
-            # Row count selector and pagination controls
+            # Pagination controls - only for display
             col1, col2, col3, col4, col5 = st.columns([1, 6, 5, 3, 1])
             
             with col1:
                 rows_per_page = st.selectbox(
                     "Rows per page:", 
-                    options=[50, 100, 300],
-                    index=0  # Default to 50
+                    options=[100, 500, 1000, len(display_filtered_df)],  # Use display_filtered_df length
+                    index=0,
+                    key="rows_selector",
+                    on_change=lambda: st.session_state.update({"rows_per_page": st.session_state.rows_selector, "page_number": 1})
                 )
             
-
-            n_pages = max(1, math.ceil(len(filtered_df) / rows_per_page))
+            n_pages = max(1, math.ceil(len(display_filtered_df) / rows_per_page))  # Use display_filtered_df
             
             with col5:
                 page_number = st.number_input(
                     "Page:", 
                     min_value=1, 
                     max_value=n_pages,
-                    step=1
+                    step=1,
+                    key="page_input",
+                    on_change=lambda: st.session_state.update({"page_number": st.session_state.page_input})
                 )
+            
+            # Calculate start and end index for the current page
+            start_idx = (page_number - 1) * rows_per_page
+            end_idx = min(start_idx + rows_per_page, len(display_filtered_df))  # Use display_filtered_df
             
             # Show page stats
             with col3:
-                start_idx = 1 if len(filtered_df) > 0 else 0
-                end_idx = len(filtered_df) if rows_per_page == "All" else min(page_number * rows_per_page, len(filtered_df))
-                st.write(f"Showing {start_idx}-{end_idx} of {len(filtered_df)} records")
+                st.write(f"Showing {start_idx+1}-{end_idx} of {len(display_filtered_df)} records")  # Use display_filtered_df
             
-            # Slice the dataframe based on pagination
-            if rows_per_page != "All":
-                start = (page_number - 1) * rows_per_page
-                end = min(start + rows_per_page, len(filtered_df))
-                display_df = filtered_df.iloc[start:end]
+            # Slice DataFrame for display - USE display_filtered_df HERE
+            if rows_per_page == len(display_filtered_df):
+                # Show all rows
+                display_df = display_filtered_df
             else:
-                display_df = filtered_df
+                # Show paginated view
+                display_df = display_filtered_df.iloc[start_idx:end_idx]
             
-            # Forward/backward buttons
+            # Navigation buttons
             if n_pages > 1:
-                col1, col2 = st.columns(2)
-                if col1.button("← Previous", disabled=(page_number == 1)):
-                    # This will trigger a rerun with page_number-1
+                cols = st.columns([3, 20, 0.9])  # Adjust widths as needed
+                if cols[0].button("← Previous", disabled=(page_number == 1)):
                     st.session_state["page_number"] = max(1, page_number - 1)
                     st.rerun()
                     
-                if col2.button("Next →", disabled=(page_number == n_pages)):
-                    # This will trigger a rerun with page_number+1
+                if cols[-1].button("Next →", disabled=(page_number == n_pages)):
                     st.session_state["page_number"] = min(n_pages, page_number + 1)
                     st.rerun()
             
-            # Display the dataframe with width set to fit content
+            # Display the dataframe
             st.dataframe(
                 display_df[display_cols],
                 use_container_width=True,
-                height=min(600, 35 * len(display_df) + 38)  # Dynamic height based on row count
+                height=min(600, 35 * len(display_df) + 38)  
             )
         
         with tab2:
@@ -331,7 +336,7 @@ def render_dashboard():
         
         with tab4:
             st.subheader("Inventory Reconciliation")
-            render_reconciliation_opportunities(filtered_df)
+            render_reconciliation_opportunities(df) # use the original df, not filtered_df
     
     except Exception as e:
         st.error(f"Error loading dashboard: {str(e)}")
@@ -345,7 +350,7 @@ def main():
     # Different display based on authentication status
     if st.session_state.get("authentication_status"):
         # AUTHENTICATED USER CONTENT
-        col1, col2, col3 = st.columns([6, 10, 1])
+        col1, col2, col3 = st.columns([6, 18, 2])
         with col1:
             welcome_msg = f'Welcome, **{st.session_state["name"]}**'
             
