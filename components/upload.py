@@ -605,6 +605,35 @@ def render_upload_form():
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             help="Download an Excel template with the correct column headers for importing data"
         )
+        
+        with st.expander("Can't download template?"):
+            st.markdown("""
+            **If you can't download the template, please ensure your spreadsheet columns use the following format:**
+
+            **Required columns:**
+            - Customer  
+            - Item  
+            - Description  
+            - System Count  
+            - Actual Count  
+            - Location  
+
+            **Optional columns:**
+            - Lot Number  
+            - Expiration Date  
+            - Unit  
+            - Status  
+            - LP  
+
+            > ⚠️ *Please ensure that there are no duplicate column names in your spreadsheet.*
+            """)
+
+            st.image("assets/tutorial/column_name_example.png")
+
+            st.markdown("> ⚠️ *If your workbook contain multiple sheets. Ensure the cycle count is the first sheet in the workbook.*")
+            
+            st.image("assets/tutorial/sheet_order_example.png")
+
     
         st.write("### Import Data")
         
@@ -714,18 +743,8 @@ def render_upload_form():
                     st.write("Please ensure your file has columns that can be mapped to: item_id, description, system_count, actual_count, and customer")
                 else:
                     st.write("Preview of data to import:")
-                    st.dataframe(import_df.head(5))
+                    st.dataframe(import_df.head(10))
                     
-                # Add missing standard columns if necessary
-                # if "cycle_date" not in import_df.columns:
-                #     import_df["cycle_date"] = date.today().isoformat()
-                # if "notes" not in import_df.columns:
-                #     import_df["notes"] = ""
-                # for field in ["lot_number", "unit", "status", "lp", "location"]:
-                #     if field not in import_df.columns:
-                #         import_df[field] = ""
-                # if "expiration_date" not in import_df.columns:
-                #     import_df["expiration_date"] = None
                 # Add better file preview to help diagnose issues
                 st.write("### File Overview")
                 st.write(f"Total rows: {len(import_df)}")
