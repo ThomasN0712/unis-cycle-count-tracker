@@ -660,7 +660,7 @@ def render_upload_form():
                     # Standard name: [list of possible variant names]
                     "item_id": ["item_id", "itemid", "item_number", "itemnumber", "item", "sku", "item code", "itemcode", "part_number", "partnumber", "0"],
                     "description": ["description", "desc", "item_description", "itemdescription", "product_description", "name", "item_name", "product_name", "product", "1"],
-                    "lot_number": ["lot_number", "lotnumber", "lot", "lot_no", "lot#", "batch", "batch_number", "batchnumber", "2"],
+                    "lot_number": ["lot_number", "lotno.", "lot_no.", "lotnumber", "lot", "lot_no", "lot#", "batch", "batch_number", "batchnumber", "2"],
                     "expiration_date": ["expiration_date", "expirationdate", "expiration", "exp_date", "expdate", "exp", "expiry_date", "expirydate", "expiry", "3"],
                     "unit": ["unit", "uom", "measure", "unit_of_measure", "unitofmeasure", "units", "4"],
                     "status": ["status", "state", "condition", "item_status", "5"],
@@ -811,10 +811,34 @@ def render_upload_form():
                     for k, v in d.items():
                         if isinstance(v, float) and np.isnan(v):
                             d[k] = None
+                        # Add this check for NaT values
+                        elif pd.isna(v) or v is pd.NaT:
+                            d[k] = None
                     return d
 
+                # Check for columns that might not exist in database schema
+                expected_columns = ["item_id", "description", "lot_number", "expiration_date", 
+                                    "unit", "status", "lp", "location", "system_count", 
+                                    "actual_count", "variance", "percent_diff", "customer", 
+                                    "notes", "cycle_date", "uploaded_by", "uploaded_at", 
+                                    "warehouse_id"]
+                
+                extra_columns = [col for col in import_df.columns if col not in expected_columns]
+                
+                if extra_columns:
+                    warning_msg = f"Warning: The following columns are not supported in the system and will be ignored when uploading: {', '.join(extra_columns)}"
+                    st.warning(warning_msg, icon="⚠️")
+                    
+                    # Show preview of the extra columns (first 5 rows)
+                    preview_df = import_df[extra_columns].head(5)
+                    st.dataframe(preview_df)
+                    
+                    continue_anyway = st.checkbox("I understand these columns will be ignored. Continue with import?")
+                else:
+                    continue_anyway = True
+                
                 # Import button
-                if st.button("Import Data"):
+                if st.button("Import Data") and continue_anyway:
                     # Validate cycle count date was selected
                     if not cycle_count_date:
                         st.error("Please select a cycle count date before importing")
@@ -839,6 +863,11 @@ def render_upload_form():
                                 # Process records with progress updates
                                 for i, record in enumerate(cleaned_records):
                                     try:
+                                        # Remove columns that aren't in the expected schema
+                                        for col in list(record.keys()):
+                                            if col not in expected_columns:
+                                                del record[col]
+                                        
                                         # Update progress
                                         progress = int((i / total_records) * 100)
                                         progress_bar.progress(progress)
