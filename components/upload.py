@@ -761,6 +761,14 @@ def render_upload_form():
                     st.warning(f"File contains {len(import_df)} rows. Processing only the first 5000 rows.")
                     import_df = import_df.head(5000)
                 
+                # Process any datetime columns before converting to records
+                if 'expiration_date' in import_df.columns:
+                    import_df['expiration_date'] = import_df['expiration_date'].apply(
+                        lambda x: x.strftime('%Y-%m-%d') if isinstance(x, (pd.Timestamp, datetime, date)) and not pd.isna(x) 
+                        else None if pd.isna(x) 
+                        else x
+                    )
+                
                 # Calculate variance and percent_diff
                 import_df["variance"] = import_df["actual_count"] - import_df["system_count"]
                 import_df["percent_diff"] = import_df.apply(
@@ -837,12 +845,58 @@ def render_upload_form():
                 else:
                     continue_anyway = True
                 
-                # Import button
+                required_fields = {
+                    "customer": "Customer", 
+                    "item_id": "Item ID", 
+                    "description": "Description", 
+                    "location": "Location", 
+                    "system_count": "System Count", 
+                    "actual_count": "Actual Count"
+                }
+
+                # Add validation before importing
                 if st.button("Import Data") and continue_anyway:
                     # Validate cycle count date was selected
                     if not cycle_count_date:
                         st.error("Please select a cycle count date before importing")
                     else:
+                        # Check for missing required data
+                        missing_data = {}
+                        for field, display_name in required_fields.items():
+                            if field in import_df.columns:
+                                null_count = import_df[field].isna().sum()
+                                if null_count > 0:
+                                    missing_data[field] = (display_name, null_count)
+                        
+                        if missing_data:
+                            st.error("❌ Your file contains missing required data:")
+                            
+                            # For each missing field, show examples of the problematic rows
+                            for field, (display_name, count) in missing_data.items():
+                                st.warning(f"• {display_name}: {count} records are missing this required field")
+                                
+                                # Get sample rows with this field missing (up to 3 examples)
+                                sample_rows = import_df[import_df[field].isna()].head(3)
+                                
+                                if not sample_rows.empty:
+                                    st.write(f"📋 **Rows with missing {display_name}:**")
+                                    
+                                    # Create a friendlier display of the problem rows
+                                    display_cols = ['item_id', 'description', 'customer', 'location', 
+                                                   'system_count', 'actual_count']
+                                    # Filter to only include columns that exist
+                                    display_cols = [col for col in display_cols if col in sample_rows.columns]
+                                    
+                                    # Highlight the problematic field
+                                    styled_df = sample_rows[display_cols].style.apply(
+                                        lambda _: ['background-color: #ffcccc' if col == field else '' 
+                                                  for col in display_cols], axis=1
+                                    )
+                                    
+                                    st.dataframe(styled_df)
+                    
+                            st.stop()  # Stop execution to prevent importing invalid data
+                        
                         with st.spinner("Preparing to import..."):
                             # Convert DataFrame to records and clean NaN values
                             records = import_df.to_dict('records')
